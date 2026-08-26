@@ -19,7 +19,7 @@ function safe(s){return String(s??"").replace(/[&<>'"]/g,ch=>({"&":"&amp;","<":"
 
 function renderDashboard(){const avg=pct(state.correct,state.total),master=mastery();
 $("#view-dashboard").innerHTML=`
-<div class="grid grid-2"><div class="card hero"><div class="eyebrow hero-eyebrow">INVESTOR COACH</div><h2>Учитесь. Отвечайте. Практикуйтесь.</h2><p>Короткая теория, понятные тесты и голосовые встречи с инвестором.</p><div class="row"><button class="btn" onclick="go('train')">Начать тест</button><button class="btn secondary" onclick="go('investor')">Встреча с инвестором</button></div></div>
+<div class="grid grid-2"><div class="card hero"><div class="eyebrow hero-eyebrow">INVESTOR COACH</div><h2>Учитесь. Отвечайте. Практикуйтесь.</h2><p>Короткая теория, понятные тесты и голосовые встречи с инвестором.</p><div class="row"><button class="btn" onclick="go('coach')">Coach</button><button class="btn secondary" onclick="go('investor')">Встреча с инвестором</button></div></div>
 <div class="card"><div class="eyebrow">ПРОГРЕСС</div><div class="metric">${master}%</div><div class="progress"><div style="width:${master}%"></div></div><p class="muted">Тесты: ${avg}% · Ответов: ${state.total}</p><button class="btn secondary" onclick="go('roadmap')">Открыть курс</button></div></div>
 <div class="grid grid-4 stats-grid"><button class="card daily-task" onclick="go('learn')"><strong>Термины</strong><small>${TERMS.length} карточек</small></button><button class="card daily-task" onclick="go('train')"><strong>Тесты</strong><small>Ответ → разбор → дальше</small></button><button class="card daily-task" onclick="go('speak')"><strong>Практика</strong><small>Объяснить голосом</small></button><button class="card daily-task" onclick="go('investor')"><strong>Инвестор</strong><small>Голосовая встреча</small></button></div>`}
 
@@ -27,6 +27,78 @@ let learnCat="Все",learnQuery="";
 function renderLearn(){const cats=["Все",...new Set(TERMS.map(t=>t.cat))];const list=TERMS.filter(t=>(learnCat==="Все"||t.cat===learnCat)&&(!learnQuery||(`${t.word} ${t.full} ${t.simple}`).toLowerCase().includes(learnQuery.toLowerCase())));
 $("#view-learn").innerHTML=`<div class="card learn-intro"><h2>Термины</h2><input class="input" placeholder="Найти термин" value="${safe(learnQuery)}" oninput="learnQuery=this.value;renderLearn()"></div><div class="filterbar">${cats.map(c=>`<button class="${c===learnCat?'active':''}" onclick="setLearnCat('${c}')">${c}</button>`).join("")}</div><div class="grid grid-3">${list.map(t=>`<div class="card term-card"><div><span class="tag">${t.cat}</span><div class="term-word">${t.word}</div><div class="muted small">${t.full}</div><details class="recall-details"><summary>Показать объяснение</summary><p class="definition"><strong>Просто:</strong> ${t.simple}</p>${t.formula?`<div class="formula small"><strong>Формула:</strong> ${t.formula}</div>`:""}<p class="small"><strong>Пример:</strong> ${t.example||'Пример зависит от бизнеса.'}</p><p class="small"><strong>Инвестор может спросить:</strong> ${t.investor}</p><p class="small"><strong>Зачем знать:</strong> ${t.why}</p></details></div><div class="recall-actions"><button class="btn secondary" onclick="rateRecall('${t.id}',false)">Не знаю</button><button class="btn" onclick="rateRecall('${t.id}',true)">Знаю</button></div></div>`).join("")}</div>`}
 function setLearnCat(c){learnCat=c;renderLearn()} function rateRecall(id,ok){updateSRS(id,ok);setDaily('learn');renderLearn();renderDashboard();toast(ok?'Следующее повторение отложено.':'Термин вернётся быстрее.')}
+
+
+// Coach: короткие подходы по 1–2 термина. Сначала смысл и пример, затем извлечение из памяти в другом контексте.
+let coachSession=null;
+function coachPool(){
+  const seen=new Set(),out=[];
+  const add=t=>{if(t&&!seen.has(t.id)){seen.add(t.id);out.push(t)}};
+  dueTerms().forEach(add);
+  state.weak.map(term).filter(Boolean).forEach(add);
+  TERMS.filter(t=>!state.learned[t.id]).forEach(add);
+  TERMS.forEach(add);
+  return out;
+}
+function coachDecoys(correct,count=2){
+  const same=TERMS.filter(t=>t.id!==correct.id&&t.cat===correct.cat);
+  const rest=TERMS.filter(t=>t.id!==correct.id&&!same.some(x=>x.id===t.id));
+  const pool=[...same,...rest];
+  const out=[];
+  for(const t of pool){if(out.length>=count)break;if(!out.some(x=>x.id===t.id))out.push(t)}
+  return out;
+}
+function coachShuffle(arr){
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}
+  return a;
+}
+function buildCoachTask(t,type){
+  const decoys=coachDecoys(t,2);
+  if(type==='scenario'){
+    const choices=coachShuffle([t,...decoys]);
+    return {type,termId:t.id,prompt:`Ситуация: ${t.example||t.simple} Какой термин подходит лучше всего?`,options:choices.map(x=>x.word),answer:choices.findIndex(x=>x.id===t.id),answered:false,selected:-1};
+  }
+  const choices=coachShuffle([t,...decoys]);
+  return {type:'meaning',termId:t.id,prompt:`Что означает «${t.word}»?`,options:choices.map(x=>x.simple),answer:choices.findIndex(x=>x.id===t.id),answered:false,selected:-1};
+}
+function startCoach(count=2){
+  const chosen=coachPool().slice(0,Math.max(1,Math.min(2,count)));
+  const tasks=[];
+  chosen.forEach(t=>{tasks.push({type:'learn',termId:t.id});tasks.push(buildCoachTask(t,'scenario'))});
+  chosen.forEach(t=>tasks.push(buildCoachTask(t,'meaning')));
+  coachSession={count:chosen.length,index:0,tasks};
+  renderCoach();
+}
+function coachAnswer(i){
+  const task=coachSession?.tasks?.[coachSession.index];
+  if(!task||task.type==='learn'||task.answered)return;
+  task.selected=i;task.answered=true;
+  const ok=i===task.answer;
+  updateSRS(task.termId,ok);
+  renderCoach();renderDashboard();
+}
+function coachNext(){
+  if(!coachSession)return;
+  const task=coachSession.tasks[coachSession.index];
+  if(task.type!=='learn'&&!task.answered)return;
+  coachSession.index++;
+  renderCoach();
+}
+function coachFeedback(task,t){
+  const ok=task.selected===task.answer;
+  return `<div class="answer-result ${ok?'is-correct':'is-wrong'}"><strong>${ok?'Правильно':'Неправильно'}</strong></div>${!ok?`<div class="answer-line wrong-line"><span>Ваш ответ</span><strong>${safe(task.options[task.selected])}</strong></div>`:''}<div class="answer-line correct-line"><span>Правильный ответ</span><strong>${safe(task.options[task.answer])}</strong></div><div class="feedback lesson-feedback"><p><strong>Просто:</strong> ${safe(t.simple)}</p>${t.example?`<p><strong>Пример:</strong> ${safe(t.example)}</p>`:''}<p><strong>Где используется:</strong> ${safe(termUse(t))}</p></div>`;
+}
+function renderCoach(){
+  const root=$("#view-coach");if(!root)return;
+  if(!coachSession){root.innerHTML=`<div class="card"><span class="tag">COACH</span><h2>Тренировка на понимание</h2><p>Один короткий подход: термин → конкретный пример → вопрос по ситуации → повтор без подсказки.</p><div class="row"><button class="btn" onclick="startCoach(1)">1 термин</button><button class="btn secondary" onclick="startCoach(2)">2 термина</button></div></div>`;return}
+  if(coachSession.index>=coachSession.tasks.length){root.innerHTML=`<div class="card"><span class="tag">ГОТОВО</span><h2>Подход завершён</h2><p>Вы увидели термины в нескольких контекстах и достали смысл из памяти.</p><div class="row"><button class="btn" onclick="startCoach(${coachSession.count})">Ещё подход</button><button class="btn secondary" onclick="go('learn')">Открыть словарь</button></div></div>`;return}
+  const task=coachSession.tasks[coachSession.index],t=term(task.termId);const n=coachSession.index+1,total=coachSession.tasks.length;
+  if(task.type==='learn'){
+    root.innerHTML=`<div class="quiz"><div class="row between"><span class="tag">COACH · ${n}/${total}</span><span class="muted small">Сначала поймите смысл</span></div><div class="card quiz-card"><h2>${safe(t.word)}</h2><p class="muted">${safe(t.full)}</p><div class="feedback lesson-feedback"><p><strong>Просто:</strong> ${safe(t.simple)}</p>${t.example?`<p><strong>Конкретный пример:</strong> ${safe(t.example)}</p>`:''}<p><strong>Где используется:</strong> ${safe(termUse(t))}</p>${t.investor?`<p><strong>Инвестор может спросить:</strong> ${safe(t.investor)}</p>`:''}</div><button class="btn feedback-next" onclick="coachNext()">Проверить себя</button></div></div>`;return
+  }
+  root.innerHTML=`<div class="quiz"><div class="row between"><span class="tag">COACH · ${n}/${total}</span><span class="muted small">Ответьте без подсказки</span></div><div class="card quiz-card"><h2>${safe(task.prompt)}</h2><div>${task.options.map((o,i)=>`<button class="option ${task.answered?(i===task.answer?'correct':i===task.selected?'wrong':''):''}" ${task.answered?'disabled':''} onclick="coachAnswer(${i})">${safe(o)}</button>`).join('')}</div>${task.answered?`${coachFeedback(task,t)}<button class="btn feedback-next" onclick="coachNext()">Следующий шаг</button>`:''}</div></div>`;
+}
 
 let quizIndex=0,quizAnswered=false,lastAnswer=-1,currentQuiz=null;
 function buildQuizQueue(){const dueIds=new Set(dueTerms().map(t=>t.id));const weakIds=new Set(state.weak);return [...QUIZ].sort((a,b)=>(dueIds.has(b.termId)?3:0)+(weakIds.has(b.termId)?2:0)-((dueIds.has(a.termId)?3:0)+(weakIds.has(a.termId)?2:0)))}
@@ -78,10 +150,10 @@ function stopVoice(forSend){if(!voiceRunning||!recognition){if(forSend)finalSubm
 function submitVoice(ch){voiceChannel=ch;if(voiceRunning&&voiceChannel===ch){voiceStoppingForSend=true;voiceRunning=false;try{recognition.stop()}catch(_){finalSubmit(ch)}}else finalSubmit(ch)}
 function finalSubmit(ch){const text=(voiceBuffers[ch]||"").trim();if(!text){toast("Сначала запишите голосовой ответ.");return}setVoiceUI(ch,'Ответ отправлен',false);if(ch==='speak')evaluateSpeak(text);if(ch==='pitch')scorePitchText(text);if(ch==='sim')evaluateSim(text)}
 
-const views={dashboard:"Главная",learn:"Изучение",train:"Практика",speak:"Говори",pitch:"Pitch",investor:"Симуляция инвестора",roadmap:"Курс"};
+const views={dashboard:"Главная",learn:"Изучение",coach:"Coach",train:"Практика",speak:"Говори",pitch:"Pitch",investor:"Симуляция инвестора",roadmap:"Курс"};
 function go(v){if(voiceRunning){if(typeof cancelVoiceCapture==='function')cancelVoiceCapture();else stopVoice(false);}$$('.view').forEach(x=>x.classList.remove('active'));const target=$("#view-"+v);if(target)target.classList.add('active');$$('.nav-item,.bottom-nav-item').forEach(x=>x.classList.toggle('active',x.dataset.view===v));$("#pageTitle").textContent=views[v]||v;renderView(v);window.scrollTo({top:0,behavior:'smooth'});const sb=$('.sidebar');if(sb)sb.classList.remove('open')}
-function renderView(v){({dashboard:renderDashboard,learn:renderLearn,train:renderTrain,speak:renderSpeak,pitch:renderPitch,investor:renderInvestor,roadmap:renderRoadmap})[v]?.()}
-function renderAll(){renderDashboard();renderLearn();renderTrain();renderSpeak();renderPitch();renderInvestor();renderRoadmap();$("#streak").textContent=state.streak;$("#dayLabel").textContent=`День ${state.day} из 30`;$("#sideProgress").style.width=(state.day/30*100)+'%'}
+function renderView(v){({dashboard:renderDashboard,learn:renderLearn,coach:renderCoach,train:renderTrain,speak:renderSpeak,pitch:renderPitch,investor:renderInvestor,roadmap:renderRoadmap})[v]?.()}
+function renderAll(){renderDashboard();renderLearn();renderCoach();renderTrain();renderSpeak();renderPitch();renderInvestor();renderRoadmap();$("#streak").textContent=state.streak;$("#dayLabel").textContent=`День ${state.day} из 30`;$("#sideProgress").style.width=(state.day/30*100)+'%'}
 $$('.nav-item,.bottom-nav-item').forEach(b=>b.addEventListener('click',()=>go(b.dataset.view)));const mm=$("#mobileMenu");if(mm)mm.addEventListener('click',()=>$('.sidebar').classList.toggle('open'));renderAll();
 
 // PWA installation/update logic kept intact and update checks remain network-first.
