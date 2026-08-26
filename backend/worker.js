@@ -22,8 +22,8 @@ const aiSchema={type:"object",additionalProperties:false,properties:{
  },required:["directness","clarity","evidence","metrics","terminology","risk_handling","structure"]},
  session_complete:{type:"boolean"},
  session_summary:{type:"string"},
- next_drill:{type:"string",enum:["coach","speech","pitch","simulator","review"]}
-},required:["score","verdict","strengths","improvements","red_flags","contradictions","model_answer","next_question","follow_up_reason","memory_summary","focus_topics","dimensions","session_complete","session_summary","next_drill"]};
+ next_drill:{type:"string",enum:["coach","speech","pitch","simulator","review"]},learning_gap:{type:"string",enum:["meaning","recall","application","speech","retention","none"]},learning_gap_reason:{type:"string"},claims:{type:"array",items:{type:"object",additionalProperties:false,properties:{claim:{type:"string"},value:{type:"string"}},required:["claim","value"]}}
+},required:["score","verdict","strengths","improvements","red_flags","contradictions","model_answer","next_question","follow_up_reason","memory_summary","focus_topics","dimensions","session_complete","session_summary","next_drill","learning_gap","learning_gap_reason","claims"]};
 function allowed(req,env){const o=req.headers.get("Origin")||"";const list=String(env.ALLOWED_ORIGINS||"").split(",").map(x=>x.trim()).filter(Boolean);return !o||list.includes(o)}
 function headers(req,env){const h=new Headers(JSON_HEADERS),o=req.headers.get("Origin")||"";if(o&&allowed(req,env))h.set("Access-Control-Allow-Origin",o);h.set("Vary","Origin");h.set("Access-Control-Allow-Headers","Content-Type,Authorization,X-Request-Id");h.set("Access-Control-Allow-Methods","GET,POST,OPTIONS");return h}
 function out(req,env,data,status=200,rid=""){const h=headers(req,env);if(rid)h.set("X-Request-Id",rid);return new Response(JSON.stringify(data),{status,headers:h})}
@@ -45,6 +45,14 @@ function instructions(mode){return `Ты — профессиональный In
 
 Режим: ${mode}.
 
+Если context.exam=true или context.training_mode="investor_exam":
+- это экзамен без подсказок; НЕ раскрывай model_answer до завершения (верни пустую строку);
+- веди последовательную инвестиционную встречу: каждый новый вопрос должен учитывать предыдущие ответы;
+- извлекай важные проверяемые утверждения пользователя в claims: метрики, суммы, сроки, рынок, клиенты, рост, runway, valuation и другие конкретные факты;
+- сравнивай новые утверждения с context.claims и history; только реальные несовместимости добавляй в contradictions;
+- следующий вопрос должен проверять самое слабое или недоказанное место, а не идти по шаблонному списку;
+- не придумывай benchmark и не штрафуй за отсутствие данных, которые вопрос не требовал;
+- session_complete=true при достижении max_turns; session_summary в финале должен назвать 2 сильные стороны и 2 главных риска.
 Если режим sim:
 - веди себя как опытный VC/investment committee interviewer;
 - задавай РОВНО ОДИН следующий вопрос;
@@ -62,12 +70,13 @@ function instructions(mode){return `Ты — профессиональный In
 - feedback должен добавлять новый вывод, а не повторять учебную карточку.
 
 model_answer — короткий образец сильного ответа. Если у пользователя нет собственных цифр, используй placeholders вроде «[ваш CAC]», а не выдуманные значения.
-next_drill выбери по главному дефициту навыка.`}
+next_drill выбери по главному дефициту навыка.
+learning_gap классифицируй по причине ошибки: meaning — не понимает смысл; recall — узнаёт, но не может воспроизвести; application — знает определение, но применяет неверно; speech — понимает, но плохо формулирует; retention — ранее знал, но не удержал; none — явного пробела нет. learning_gap_reason объясни одной короткой фразой.`}
 export default {async fetch(req,env){const rid=requestId(req),url=new URL(req.url),started=Date.now();try{
  if(req.method==="OPTIONS"){if(!allowed(req,env))return out(req,env,{error:"origin_not_allowed"},403,rid);return new Response(null,{status:204,headers:headers(req,env)})}
  if(!allowed(req,env))return out(req,env,{error:"origin_not_allowed"},403,rid);
- if(url.pathname==="/healthz")return out(req,env,{ok:true,service:"investor-coach-ai",version:"11.0.0"},200,rid);
- if(url.pathname==="/readyz")return out(req,env,{ok:!!env.OPENAI_API_KEY,openaiConfigured:!!env.OPENAI_API_KEY,version:"11.0.0"},env.OPENAI_API_KEY?200:503,rid);
+ if(url.pathname==="/healthz")return out(req,env,{ok:true,service:"investor-coach-ai",version:"15.0.0"},200,rid);
+ if(url.pathname==="/readyz")return out(req,env,{ok:!!env.OPENAI_API_KEY,openaiConfigured:!!env.OPENAI_API_KEY,version:"15.0.0"},env.OPENAI_API_KEY?200:503,rid);
  if(url.pathname==="/api/transcribe"&&req.method==="POST"){if(!env.OPENAI_API_KEY)return out(req,env,{error:"ai_not_configured"},503,rid);const incoming=await req.formData(),file=incoming.get("file");if(!file||typeof file==="string")return out(req,env,{error:"audio_file_required"},400,rid);if(file.size>24*1024*1024)return out(req,env,{error:"audio_too_large"},413,rid);const fd=new FormData();fd.append("file",file,file.name||"answer.webm");fd.append("model",env.TRANSCRIBE_MODEL||"gpt-4o-transcribe");fd.append("language",incoming.get("language")||"ru");fd.append("prompt","Русская деловая речь. Точно сохраняй числа и термины: SAFE, cap table, valuation, dilution, runway, burn rate, CAC, LTV, MRR, ARR, NRR, GRR, churn, retention, traction, TAM, SAM, SOM, ICP, PMF, GTM, SaaS, unit economics, gross margin, EBITDA, pitch, term sheet, due diligence.");const r=await fetch("https://api.openai.com/v1/audio/transcriptions",{method:"POST",headers:{Authorization:`Bearer ${env.OPENAI_API_KEY}`},body:fd}),raw=await r.text();if(!r.ok)return out(req,env,{error:"transcription_failed",detail:raw.slice(0,300)},502,rid);return out(req,env,{text:JSON.parse(raw).text||""},200,rid)}
  if(url.pathname==="/api/coach"&&req.method==="POST"){if(!env.OPENAI_API_KEY)return out(req,env,{error:"ai_not_configured"},503,rid);const b=await json(req),transcript=String(b.transcript||"").slice(0,16000);if(!transcript)return out(req,env,{error:"transcript_required"},400,rid);const input=`Память проекта:\n${String(b.memory||"нет").slice(0,6000)}\n\nИстория:\n${JSON.stringify(b.history||[]).slice(0,6000)}\n\nСлабые темы: ${JSON.stringify(b.weak_topics||[])}\nКонтекст: ${JSON.stringify(b.context||{}).slice(0,5000)}\n\nОтвет пользователя:\n${transcript}`;const body={model:env.COACH_MODEL||"gpt-5.6-terra",instructions:instructions(String(b.mode||"sim")),input,text:{format:{type:"json_schema",name:"investor_coach_feedback",strict:true,schema:aiSchema}},max_output_tokens:1400};const r=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${env.OPENAI_API_KEY}`},body:JSON.stringify(body)}),raw=await r.text();if(!r.ok)return out(req,env,{error:"coach_failed",detail:raw.slice(0,300)},502,rid);const text=outputText(JSON.parse(raw));if(!text)return out(req,env,{error:"empty_model_output"},502,rid);return out(req,env,JSON.parse(text),200,rid)}
  return out(req,env,{error:"not_found"},404,rid)

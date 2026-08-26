@@ -1,7 +1,7 @@
 const DEFAULT_STATE={day:1,streak:0,learned:{},correct:0,total:0,weak:[],pitchScores:[],simStep:0,messages:[],srs:{},daily:{},voiceScores:[],courseMode:"30",lastStudyDate:""};
 const state=Object.assign({},DEFAULT_STATE,JSON.parse(localStorage.getItem("investorCoachState")||"null")||{});
 state.learned=state.learned||{};state.weak=state.weak||[];state.srs=state.srs||{};state.daily=state.daily||{};state.messages=state.messages||[];state.pitchScores=state.pitchScores||[];state.voiceScores=state.voiceScores||[];
-state.coachStats=state.coachStats||{};state.coachPlan=["7","30"].includes(state.coachPlan)?state.coachPlan:"30";state.coachPlanDays=state.coachPlanDays||{"7":state.coachDay||1,"30":1};state.coachRecent=Array.isArray(state.coachRecent)?state.coachRecent.slice(-12):[];
+state.coachStats=state.coachStats||{};state.coachPlan=["7","14","30"].includes(state.coachPlan)?state.coachPlan:"30";state.coachPlanDays=state.coachPlanDays||{"7":state.coachDay||1,"30":1};state.coachRecent=Array.isArray(state.coachRecent)?state.coachRecent.slice(-12):[];
 const $=s=>document.querySelector(s);const $$=s=>[...document.querySelectorAll(s)];
 const save=()=>localStorage.setItem("investorCoachState",JSON.stringify(state));
 const toast=m=>{const t=$("#toast");if(!t)return;t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200)};
@@ -35,6 +35,7 @@ let coachSession=null;
 const COACH_WEEK=[["cac","ltv","retention","churn","runway","burn","mrr","arr"],["gross_margin","payback","nrr","grr","arpu","arpa","conversion","cohort"],["tam","sam","som","bottom_up","icp","pmf","traction","competition"],["gtm","plg","sales_led","sales_cycle","pipeline","pricing","enterprise","saas"],["valuation","pre_money","post_money","dilution","cap_table","safe","term","milestone"],["liquidation","pro_rata","vesting","cliff","board","protective","due_diligence","data_room"],["pitch","pitch_deck","one_liner","ask","use_of_funds","why_now","founder_market","risk_register"]];
 const COACH_PLANS={
  "7":{label:"7 дней",title:"Интенсив",pace:"2–4 часа в день",newPerDay:14,days:7,desc:"Быстрое погружение: термины → ситуации → вопросы инвестора → голосовая речь."},
+ "14":{label:"14 дней",title:"Ускоренный профессиональный курс",pace:"90–150 минут в день",newPerDay:8,days:14,desc:"Баланс скорости и закрепления: новые термины, применение, речь и интервальные проверки."},
  "30":{label:"30 дней",title:"Профессиональный курс",pace:"45–90 минут в день",newPerDay:4,days:30,desc:"Системное освоение языка инвесторов с интервальным повторением и живой практикой."}
 };
 const COACH_GUIDES={
@@ -463,5 +464,410 @@ renderCoach=function(){
   const next=nextBestTraining();
   card.insertAdjacentHTML("beforeend",`<div class="feedback"><strong>Следующая лучшая тренировка</strong><p>${safe(next.why)}</p><button class="btn secondary" onclick="go('${next.view}')">${safe(next.title)}</button></div>`);
  }
+};
+try{renderDashboard()}catch{}
+
+
+/* ===== Placement + Retention Learning Engine v12 ===== */
+state.placement=Object.assign({done:false,active:false,current:0,answers:[],score:null,recommended:"",completedAt:""},state.placement||{});
+state.coachPlanDays=state.coachPlanDays||{"7":1,"14":1,"30":1};
+if(!state.coachPlanDays["14"])state.coachPlanDays["14"]=1;
+
+function placementQuestions(){
+ const valid=QUIZ.filter(q=>term(q.termId));
+ const buckets={};
+ valid.forEach(q=>{const c=term(q.termId)?.cat||"Другое";(buckets[c]||(buckets[c]=[])).push(q)});
+ const cats=Object.keys(buckets),out=[];let round=0;
+ while(out.length<12&&cats.length){
+  let added=false;
+  for(const c of cats){const q=buckets[c][round];if(q&&out.length<12){out.push(q);added=true}}
+  if(!added)break;round++;
+ }
+ return out.slice(0,12);
+}
+function startPlacement(){state.placement={done:false,active:true,current:0,answers:[],score:null,recommended:"",completedAt:""};save();renderDashboard()}
+function answerPlacement(i){
+ const p=state.placement,qs=placementQuestions(),q=qs[p.current];if(!p.active||!q||p.answers[p.current])return;
+ p.answers[p.current]={selected:i,correct:i===q.a};save();renderDashboard();
+}
+function nextPlacement(){
+ const p=state.placement,qs=placementQuestions();if(!p.answers[p.current])return;
+ if(p.current>=qs.length-1){finishPlacement();return}
+ p.current++;save();renderDashboard();
+}
+function finishPlacement(){
+ const p=state.placement,qs=placementQuestions(),right=p.answers.filter(x=>x?.correct).length,score=Math.round(right/Math.max(1,qs.length)*100);
+ const recommended=score>=72?"7":score>=45?"14":"30";
+ p.active=false;p.done=true;p.score=score;p.recommended=recommended;p.completedAt=new Date().toISOString();
+ state.coachPlan=recommended;if(!state.coachPlanDays[recommended])state.coachPlanDays[recommended]=1;
+ save();renderDashboard();renderCoach();
+}
+function placementHtml(){
+ const p=state.placement;
+ if(!p.active)return "";
+ const qs=placementQuestions(),q=qs[p.current],a=p.answers[p.current],n=p.current+1;
+ return `<div class="card quiz-card"><div class="row between"><span class="tag">ВХОДНАЯ ДИАГНОСТИКА · ${n}/${qs.length}</span><span class="muted small">Маршрут будет выбран по результату</span></div><h2>${safe(q.q)}</h2><div>${q.options.map((o,i)=>`<button class="option ${a?(i===q.a?'correct':i===a.selected?'wrong':''):''}" ${a?'disabled':''} onclick="answerPlacement(${i})">${safe(o)}</button>`).join("")}</div>${a?`${quizFeedback(q)}<button class="btn feedback-next" onclick="nextPlacement()">${n===qs.length?'Завершить диагностику':'Следующий вопрос'}</button>`:""}</div>`;
+}
+function retentionScore(){
+ if(!TERMS.length)return 0;
+ const strong=TERMS.reduce((n,t)=>{const s=srsInfo(t.id),c=coachStat(t.id);return n+(((s.box||0)>=3&&(c.mastery||0)>=45)?1:0)},0);
+ return Math.round(strong/TERMS.length*100);
+}
+function professionalLevel(){
+ const s=professionalReadiness();
+ if(s>=82)return {title:"Профессиональный",text:"Знания уже переносятся в речь и ответы инвестору."};
+ if(s>=62)return {title:"Уверенный",text:"База сильная. Основной рост даст живая практика и сложные follow-up вопросы."};
+ if(s>=38)return {title:"Рабочий",text:"Термины знакомы, но их ещё нужно закрепить в применении и речи."};
+ return {title:"Начальный",text:"Сначала создаём фундамент терминов и правильных смысловых связей."};
+}
+function dailyNextAction(){
+ if(!state.placement.done)return {view:"dashboard",label:"Пройти диагностику",why:"Сначала определим стартовый уровень и подходящую скорость обучения.",action:"startPlacement()"};
+ const due=dueTerms().length,weak=state.weak.length,skill=weakestProfessionalSkill();
+ if(due>=5||weak>=5)return {view:"coach",label:"Coach",why:`Сегодня важнее закрепить ${Math.max(due,weak)} слабых/просроченных тем.`,action:"go('coach')"};
+ if(skill.samples===0||["clarity","directness","structure","terminology"].includes(skill.id))return {view:"speak",label:"Живая речь",why:"Следующий рост даст самостоятельная формулировка без подсказки.",action:"go('speak')"};
+ return {view:"investor",label:"Встреча с инвестором",why:"Пора переносить знания в давление реального вопроса.",action:"go('investor')"};
+}
+function placementResultHtml(){
+ if(!state.placement.done)return `<div class="card"><span class="tag">СТАРТОВЫЙ УРОВЕНЬ</span><h3>Определить правильный маршрут</h3><p class="muted">12 коротких вопросов. После них Coach автоматически предложит 7, 14 или 30 дней.</p><button class="btn" onclick="startPlacement()">Начать диагностику</button></div>`;
+ const p=state.placement,plan=COACH_PLANS[p.recommended]||COACH_PLANS["30"];
+ return `<div class="card"><div class="row between"><div><span class="tag">СТАРТОВЫЙ УРОВЕНЬ</span><h3>${p.score}% · ${safe(plan.title)}</h3><p class="muted">Рекомендованный маршрут: ${plan.label}. Его можно поменять вручную в Coach.</p></div><button class="btn secondary" onclick="startPlacement()">Пройти заново</button></div></div>`;
+}
+
+const _renderDashboardV11Placement=renderDashboard;
+renderDashboard=function(){
+ if(state.placement.active){
+  const root=$("#view-dashboard");if(!root)return;root.innerHTML=placementHtml();return;
+ }
+ _renderDashboardV11Placement();
+ const root=$("#view-dashboard");if(!root)return;
+ const next=dailyNextAction(),level=professionalLevel(),ret=retentionScore();
+ root.insertAdjacentHTML("afterbegin",`${placementResultHtml()}<div class="grid grid-2"><div class="card"><span class="tag">СЛЕДУЮЩИЙ ШАГ</span><h3>${safe(next.label)}</h3><p class="muted">${safe(next.why)}</p><button class="btn" onclick="${next.action}">Начать</button></div><div class="card"><span class="tag">УДЕРЖАНИЕ ЗНАНИЙ</span><h3>${ret}% · ${safe(level.title)}</h3><div class="progress"><div style="width:${ret}%"></div></div><p class="muted">${safe(level.text)}</p></div></div>`);
+};
+
+const _renderCoachV11Placement=renderCoach;
+renderCoach=function(){
+ _renderCoachV11Placement();
+ if(!state.placement.done||coachSession)return;
+ const root=$("#view-coach");if(!root)return;
+ const p=state.placement,plan=COACH_PLANS[p.recommended];
+ root.insertAdjacentHTML("afterbegin",`<div class="card"><div class="row between"><div><span class="tag">ПЕРСОНАЛЬНЫЙ МАРШРУТ</span><strong>${safe(plan.label)} · старт ${p.score}%</strong></div><button class="btn secondary" onclick="go('dashboard')">Диагностика</button></div></div>`);
+};
+
+try{renderDashboard()}catch{}
+
+
+/* ===== Adaptive Brain Engine v13 ===== */
+state.brainModel=state.brainModel||{};
+state.confusionPairs=state.confusionPairs||{};
+
+const BRAIN_STAGE_LABELS={
+ exposure:"Знакомство",
+ recognition:"Узнавание",
+ recall:"Воспроизведение",
+ application:"Применение",
+ speech:"Свободная речь",
+ mastery:"Освоено"
+};
+function brainEntry(id){
+ if(!state.brainModel[id])state.brainModel[id]={stage:"exposure",recognition:0,recall:0,application:0,speech:0,errors:0,lastError:"",confidence:0};
+ return state.brainModel[id];
+}
+function brainSyncTerm(id){
+ const b=brainEntry(id),s=coachStat(id),sr=srsInfo(id),sp=Number(state.termSpeech[id]||0);
+ b.recognition=Math.max(b.recognition,Math.min(100,Math.round(((sr.box||0)/5)*100)));
+ b.application=Math.max(b.application,Math.min(100,Number(s.mastery||0)));
+ b.speech=Math.max(b.speech,sp);
+ if(b.speech>=78&&b.application>=72&&b.recognition>=70)b.stage="mastery";
+ else if(b.speech>=55)b.stage="speech";
+ else if(b.application>=48)b.stage="application";
+ else if(b.recall>=45)b.stage="recall";
+ else if(b.recognition>=35)b.stage="recognition";
+ else b.stage="exposure";
+ return b;
+}
+function brainRecord(task,ok,selected){
+ if(!task?.termId)return;
+ const b=brainSyncTerm(task.termId),type=task.type||"";
+ if(["meaning","scenario","investor","usage","response"].includes(type)){
+  b.recognition=Math.max(0,Math.min(100,b.recognition+(ok?8:-5)));
+  if(type==="scenario"||type==="usage"||type==="response")b.application=Math.max(0,Math.min(100,b.application+(ok?10:-7)));
+ }
+ if(type==="transfer")b.recall=Math.min(100,b.recall+8);
+ if(!ok){
+  b.errors++;b.lastError=type||"unknown";
+  const q=coachSession?.tasks?.[coachSession.index];
+  if(q?.options&&Number.isInteger(selected)&&selected>=0){
+   const chosen=String(q.options[selected]||"").trim();
+   const other=TERMS.find(x=>x.word===chosen);
+   if(other&&other.id!==task.termId){
+    const key=[task.termId,other.id].sort().join("|");
+    state.confusionPairs[key]=(state.confusionPairs[key]||0)+1;
+   }
+  }
+ }
+ brainSyncTerm(task.termId);
+}
+function brainWeakness(id){
+ const b=brainSyncTerm(id);
+ if(b.recognition<40)return "meaning";
+ if(b.recall<45)return "recall";
+ if(b.application<55)return "application";
+ if(b.speech<65)return "speech";
+ return "retention";
+}
+function brainPriority(t){
+ const b=brainSyncTerm(t.id),weak=brainWeakness(t.id);
+ const stageWeight={meaning:12,recall:10,application:8,speech:6,retention:2}[weak]||0;
+ return stageWeight+(b.errors||0)*2-(b.stage==="mastery"?15:0);
+}
+function strongestConfusionFor(id){
+ let best=null;
+ Object.entries(state.confusionPairs).forEach(([k,n])=>{
+  const ids=k.split("|");if(!ids.includes(id))return;
+  const other=ids[0]===id?ids[1]:ids[0];
+  if(!best||n>best.n)best={id:other,n};
+ });
+ return best;
+}
+function brainTaskFor(t){
+ const b=brainSyncTerm(t.id),weak=brainWeakness(t.id),g=coachGuide(t),conf=strongestConfusionFor(t.id);
+ if(weak==="meaning"){
+  const d=coachDistractors(t,3),opts=coachShuffle([t.simple,...d.map(x=>x.simple)]);
+  return coachOptionTask("meaning",t,`Как точнее всего объяснить «${t.word}»?`,opts,opts.indexOf(t.simple));
+ }
+ if(weak==="recall")return {type:"transfer",termId:t.id,prompt:`Без подсказки объясните «${t.word}» одним предложением, затем приведите один пример из бизнеса.`,answered:false,brain:"recall"};
+ if(weak==="application"){
+  if(conf){
+   const other=term(conf.id);
+   if(other){
+    const opts=coachShuffle([t.word,other.word]);
+    return coachOptionTask("scenario",t,`Не перепутайте близкие понятия. Ситуация: ${t.example||t.simple} Какой термин здесь точнее?`,opts,opts.indexOf(t.word));
+   }
+  }
+  const c=coachChoices(t,x=>x.word);
+  return coachOptionTask("scenario",t,`Применение: ${t.example||t.simple} Какой термин нужен?`,c.options,c.answer);
+ }
+ if(weak==="speech")return {type:"speech",termId:t.id,prompt:`Ответьте голосом 20–40 секунд: «${t.investor||`Как ${t.word} влияет на ваш бизнес и почему инвестору это важно?`}»`,answered:false,score:null,feedback:"",brain:"speech"};
+ return {type:"transfer",termId:t.id,prompt:`Через интервальное воспроизведение: объясните «${t.word}» без карточки и свяжите с цифрой, решением или риском.`,answered:false,brain:"retention"};
+}
+function brainNextTerms(count=2){
+ return TERMS.map(t=>({t,p:coachPriority(t)+brainPriority(t)})).sort((a,b)=>b.p-a.p).slice(0,count).map(x=>x.t);
+}
+function startBrainDrill(){
+ const selected=brainNextTerms(2);
+ if(!selected.length)return;
+ coachSession={termIds:selected.map(t=>t.id),tasks:selected.map(brainTaskFor),index:0,correct:0,answered:0,mistakes:[],startedAt:Date.now(),brain:true};
+ save();renderCoach();
+}
+function brainSummary(){
+ const counts={};
+ TERMS.forEach(t=>{const s=brainSyncTerm(t.id).stage;counts[s]=(counts[s]||0)+1});
+ return counts;
+}
+function brainDashboardHtml(){
+ const c=brainSummary(),next=brainNextTerms(1)[0],b=next?brainSyncTerm(next.id):null;
+ return `<div class="card"><div class="row between"><div><span class="tag">ADAPTIVE BRAIN ENGINE</span><h3>${next?`Следующий термин: ${safe(next.word)}`:"Маршрут построен"}</h3><p class="muted">${next?`Сейчас слабое место: ${safe(BRAIN_STAGE_LABELS[b.stage])}. Тренировка будет выбрана автоматически.`:""}</p></div><button class="btn" onclick="go('coach');setTimeout(startBrainDrill,0)">Умная тренировка</button></div><div class="small muted">Узнавание: ${c.recognition||0} · Воспроизведение: ${c.recall||0} · Применение: ${c.application||0} · Речь: ${c.speech||0} · Освоено: ${c.mastery||0}</div></div>`;
+}
+
+const _coachAnswerV12Brain=coachAnswer;
+coachAnswer=function(i){
+ const task=coachSession?.tasks?.[coachSession.index],before=task?{...task}:null;
+ _coachAnswerV12Brain(i);
+ if(before&&["meaning","scenario","investor","usage","response"].includes(before.type)){
+  brainRecord(before,i===before.answer,i);save();
+ }
+};
+const _coachTransferDoneV12Brain=coachTransferDone;
+coachTransferDone=function(){
+ const task=coachSession?.tasks?.[coachSession.index];
+ if(task?.termId){const b=brainEntry(task.termId);b.recall=Math.min(100,(b.recall||0)+10)}
+ _coachTransferDoneV12Brain();if(task?.termId){brainSyncTerm(task.termId);save()}
+};
+
+const _applyAiResultV12Brain=applyAiResult;
+applyAiResult=function(res,mode,userText){
+ const score=_applyAiResultV12Brain(res,mode,userText);
+ if(mode==="coach"){
+  const task=coachSession?.tasks?.[coachSession.index];
+  if(task?.termId){const b=brainEntry(task.termId);b.speech=Math.round((Number(b.speech||0)+Number(score||0))/2);brainSyncTerm(task.termId)}
+ }
+ save();return score;
+};
+
+const _renderDashboardV12Brain=renderDashboard;
+renderDashboard=function(){
+ _renderDashboardV12Brain();
+ if(state.placement.active)return;
+ const root=$("#view-dashboard");if(root)root.insertAdjacentHTML("beforeend",brainDashboardHtml());
+};
+const _renderCoachV12Brain=renderCoach;
+renderCoach=function(){
+ _renderCoachV12Brain();
+ if(coachSession)return;
+ const root=$("#view-coach");if(!root)return;
+ const next=brainNextTerms(1)[0],b=next?brainSyncTerm(next.id):null;
+ root.insertAdjacentHTML("afterbegin",`<div class="card"><div class="row between"><div><span class="tag">УМНАЯ ТРЕНИРОВКА</span><strong>${next?safe(next.word)+" · "+safe(BRAIN_STAGE_LABELS[b.stage]):"Адаптивный маршрут"}</strong><p class="muted small">Приложение выбирает упражнение по типу пробела: смысл → воспроизведение → применение → речь → удержание.</p></div><button class="btn" onclick="startBrainDrill()">Начать</button></div></div>`);
+};
+
+try{renderDashboard()}catch{}
+
+
+/* ===== Investor Meeting Exam v14 ===== */
+state.exam=Object.assign({active:false,complete:false,turn:0,maxTurns:10,scenario:"investment_committee",startedAt:0,finishedAt:0,scores:[],dimensions:[],claims:[],contradictions:[],summary:"",grade:"",history:[]},state.exam||{});
+
+function startInvestorExam(){
+ state.exam={active:true,complete:false,turn:0,maxTurns:10,scenario:"investment_committee",startedAt:Date.now(),finishedAt:0,scores:[],dimensions:[],claims:[],contradictions:[],summary:"",grade:"",history:[]};
+ state.messages=[{who:"ai",text:"У вас 10 вопросов без подсказок. Начнём. За 60 секунд объясните: что делает компания, для кого, какую проблему решает и какое главное доказательство спроса у вас уже есть?"}];
+ state.aiHistory=[];voiceBuffers.sim="";save();renderInvestor();
+}
+function examAverage(){
+ return state.exam.scores.length?Math.round(state.exam.scores.reduce((a,b)=>a+b,0)/state.exam.scores.length):0;
+}
+function examDimensionAverage(id){
+ const vals=state.exam.dimensions.map(x=>Number(x?.[id])).filter(Number.isFinite);
+ return vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):0;
+}
+function examGrade(score){
+ if(score>=85)return "Готов к сложной встрече";
+ if(score>=72)return "Рабочий профессиональный уровень";
+ if(score>=58)return "Нужна точечная доработка";
+ return "К реальной встрече пока рано";
+}
+function examReportHtml(){
+ const avg=examAverage(),grade=state.exam.grade||examGrade(avg);
+ return `<div class="card"><span class="tag">INVESTOR MEETING EXAM</span><h2>${avg}/100 · ${safe(grade)}</h2><p>${safe(state.exam.summary||"Экзамен завершён.")}</p>
+ <div class="skill-profile">${Object.entries(PROFESSIONAL_SKILLS).map(([id,label])=>{const v=examDimensionAverage(id);return `<div class="skill-row"><div class="row between"><span>${label}</span><strong>${v}%</strong></div><div class="progress"><div style="width:${v}%"></div></div></div>`}).join("")}</div>
+ ${state.exam.contradictions.length?`<div class="feedback"><strong>Найденные противоречия</strong><p>${state.exam.contradictions.slice(-6).map(safe).join(" • ")}</p></div>`:""}
+ <p class="muted small">Экзамен оценивает качество ответов внутри этой симуляции. Это учебная оценка, а не внешняя профессиональная сертификация.</p>
+ <div class="row"><button class="btn" onclick="startInvestorExam()">Пройти ещё раз</button><button class="btn secondary" onclick="go('coach')">Отработать слабые места</button></div></div>`;
+}
+function examHeaderHtml(){
+ const e=state.exam;
+ return `<div class="row between"><div><span class="tag">ЭКЗАМЕН · ${Math.min(e.turn+1,e.maxTurns)}/${e.maxTurns}</span><h2>Investor Meeting Exam</h2></div><strong>${e.scores.length?examAverage()+" / 100":"Без подсказок"}</strong></div>`;
+}
+
+const _renderInvestorV13Exam=renderInvestor;
+renderInvestor=function(){
+ if(!state.exam.active&&!state.exam.complete){_renderInvestorV13Exam();const root=$("#view-investor");if(root)root.insertAdjacentHTML("afterbegin",`<div class="card"><div class="row between"><div><span class="tag">ФИНАЛЬНАЯ ПРОВЕРКА</span><h3>Investor Meeting Exam</h3><p class="muted">10 последовательных вопросов без подсказок. AI возвращается к вашим цифрам, проверяет логику и ищет противоречия.</p></div><button class="btn" onclick="startInvestorExam()">Начать экзамен</button></div></div>`);return}
+ const root=$("#view-investor");if(!root)return;
+ if(state.exam.complete){root.innerHTML=examReportHtml();return}
+ const msgs=state.messages||[];
+ root.innerHTML=`<div class="grid grid-2"><div class="card voice-card">${examHeaderHtml()}<div class="sim-chat" id="simChat">${msgs.map(m=>`<div class="bubble ${m.who}">${safe(m.text)}</div>`).join("")}</div><p class="muted">Отвечайте так, как на реальной встрече. Во время экзамена модельный ответ и подсказки не показываются.</p>${voicePanel("sim")}<button class="btn secondary" onclick="if(confirm('Начать экзамен заново?'))startInvestorExam()">Начать заново</button></div><div class="card"><h3>Что проверяется</h3><p class="muted">Прямота ответа, ясность, доказательность, цифры, терминология, работа с риском и структура.</p><div class="feedback">Разбор и модельные ответы будут доступны только после завершения экзамена.</div></div></div>`;
+ const chat=$("#simChat");if(chat)chat.scrollTop=chat.scrollHeight;restoreVoiceTranscript("sim");
+};
+
+const _evaluateWithAIV13Exam=evaluateWithAI;
+evaluateWithAI=async function(ch,text){
+ if(ch!=="sim"||!state.exam.active)return _evaluateWithAIV13Exam(ch,text);
+ const status=$("#voiceStatus-sim");if(status)status.textContent="Экзаменатор анализирует ответ…";
+ try{
+  const extra={training_mode:"investor_exam",exam:true,turn:state.exam.turn,max_turns:state.exam.maxTurns,skill_profile:state.skillProfile,claims:state.exam.claims.slice(-20),contradictions:state.exam.contradictions.slice(-10),history:state.exam.history.slice(-8)};
+  const res=await aiCoach("sim",text,extra);
+  const score=applyAiResult(res,"sim",text);
+  state.exam.scores.push(score);state.exam.dimensions.push(res.dimensions||{});
+  (res.claims||[]).forEach(x=>{if(x&&x.claim)state.exam.claims.push({claim:String(x.claim).slice(0,300),value:String(x.value||"").slice(0,120),turn:state.exam.turn+1})});
+  (res.contradictions||[]).forEach(x=>{const s=String(x||"").trim();if(s&&!state.exam.contradictions.includes(s))state.exam.contradictions.push(s)});
+  state.exam.history.push({turn:state.exam.turn+1,question:(state.messages||[]).slice().reverse().find(m=>m.who==="ai")?.text||"",answer:text,score});
+  state.exam.turn++;
+  const done=state.exam.turn>=state.exam.maxTurns||!!res.session_complete;
+  state.messages.push({who:"you",text});
+  if(done){
+   state.exam.active=false;state.exam.complete=true;state.exam.finishedAt=Date.now();state.exam.summary=String(res.session_summary||res.verdict||"Экзамен завершён.").slice(0,2000);state.exam.grade=examGrade(examAverage());
+  }else{
+   state.messages.push({who:"ai",text:res.next_question||"Уточните ответ конкретнее и подтвердите его данными."});
+  }
+  voiceBuffers.sim="";save();renderInvestor();renderDashboard();
+ }catch(e){
+  console.error(e);toast("Для экзамена требуется подключённый AI backend.");if(status)status.textContent="AI недоступен";
+ }
+};
+
+const _professionalReadinessV13Exam=professionalReadiness;
+professionalReadiness=function(){
+ const base=_professionalReadinessV13Exam();
+ if(!state.exam.complete||!state.exam.scores.length)return base;
+ return Math.round(base*.65+examAverage()*.35);
+};
+readinessScore=professionalReadiness;
+
+const _renderDashboardV13Exam=renderDashboard;
+renderDashboard=function(){
+ _renderDashboardV13Exam();
+ if(state.placement.active)return;
+ const root=$("#view-dashboard");if(!root)return;
+ const e=state.exam;
+ root.insertAdjacentHTML("beforeend",`<div class="card"><div class="row between"><div><span class="tag">INVESTOR MEETING EXAM</span><h3>${e.complete?`${examAverage()}/100 · ${safe(e.grade)}`:"Финальная проверка без подсказок"}</h3><p class="muted">${e.complete?"Результат экзамена теперь учитывается в Professional Readiness.":"10 вопросов: follow-up, цифры, риски, терминология и непротиворечивость ответов."}</p></div><button class="btn" onclick="go('investor');setTimeout(${e.complete?"renderInvestor":"startInvestorExam"},0)">${e.complete?"Открыть результат":"Начать экзамен"}</button></div></div>`);
+};
+
+try{renderDashboard()}catch{}
+
+
+/* ===== Measurable Proficiency Engine v15 ===== */
+state.baseline=Object.assign({captured:false,at:"",placement:null,readiness:null,retention:null,skills:{}},state.baseline||{});
+state.proficiencyHistory=state.proficiencyHistory||[];
+state.validation=Object.assign({lastAt:"",lastScore:null,retentionAt:"",retentionScore:null},state.validation||{});
+
+function snapshotSkills(){
+ const o={};Object.keys(PROFESSIONAL_SKILLS).forEach(id=>o[id]=skillEntry(id).samples?skillEntry(id).score:null);return o;
+}
+function captureBaseline(force=false){
+ if(state.baseline.captured&&!force)return;
+ state.baseline={captured:true,at:new Date().toISOString(),placement:state.placement.score??null,readiness:professionalReadiness(),retention:retentionScore(),skills:snapshotSkills()};
+ save();
+}
+function proficiencySnapshot(source="progress"){
+ const snap={at:new Date().toISOString(),source,readiness:professionalReadiness(),retention:retentionScore(),exam:state.exam.complete?examAverage():null,skills:snapshotSkills()};
+ state.proficiencyHistory.push(snap);state.proficiencyHistory=state.proficiencyHistory.slice(-60);save();return snap;
+}
+function delta(a,b){if(a==null||b==null)return null;return Math.round(Number(b)-Number(a))}
+function deltaText(v){return v==null?"—":`${v>0?"+":""}${v} п.п.`}
+function evidenceLevel(){
+ const b=state.baseline.captured,e=state.exam.complete,r=state.validation.retentionScore!=null;
+ if(b&&e&&r)return {title:"Проверено повторно",text:"Есть стартовая точка, экзамен и отдельная проверка удержания."};
+ if(b&&e)return {title:"Измеримый прогресс",text:"Есть стартовая точка и финальный экзамен. Нужна повторная проверка удержания."};
+ if(b)return {title:"Есть baseline",text:"Стартовый уровень сохранён. Пройдите курс и Investor Meeting Exam."};
+ return {title:"Baseline не зафиксирован",text:"Сначала завершите входную диагностику."};
+}
+function validationScore(){
+ const learned=TERMS.filter(t=>(srsInfo(t.id).box||0)>=2).sort((a,b)=>termProfessionalScore(a.id)-termProfessionalScore(b.id)).slice(0,12);
+ if(!learned.length)return null;
+ return Math.round(learned.reduce((sum,t)=>sum+termProfessionalScore(t.id),0)/learned.length);
+}
+function runRetentionValidation(){
+ const score=validationScore();
+ if(score==null){toast("Сначала пройдите обучение нескольких терминов.");return}
+ state.validation.retentionAt=new Date().toISOString();state.validation.retentionScore=score;proficiencySnapshot("retention");save();renderDashboard();
+}
+function baselineProgressHtml(){
+ const ev=evidenceLevel(),b=state.baseline,nowR=professionalReadiness(),nowRet=retentionScore();
+ const dR=b.captured?delta(b.readiness,nowR):null,dRet=b.captured?delta(b.retention,nowRet):null;
+ return `<div class="card"><div class="row between"><div><span class="tag">MEASURABLE PROFICIENCY</span><h3>${safe(ev.title)}</h3><p class="muted">${safe(ev.text)}</p></div><strong>${nowR}% readiness</strong></div>
+ <div class="grid grid-2"><div><p class="small muted">Professional Readiness</p><strong>${b.captured?`${b.readiness}% → ${nowR}%`:`${nowR}%`}</strong><p class="small">${b.captured?deltaText(dR):"После диагностики сохранится стартовая точка."}</p></div>
+ <div><p class="small muted">Удержание знаний</p><strong>${b.captured?`${b.retention}% → ${nowRet}%`:`${nowRet}%`}</strong><p class="small">${b.captured?deltaText(dRet):"—"}</p></div></div>
+ <div class="row">${!b.captured&&state.placement.done?`<button class="btn" onclick="captureBaseline();renderDashboard()">Зафиксировать стартовый уровень</button>`:""}${b.captured?`<button class="btn secondary" onclick="runRetentionValidation()">Проверить удержание</button>`:""}</div>
+ ${state.validation.retentionScore!=null?`<div class="feedback"><strong>Последняя проверка удержания: ${state.validation.retentionScore}%</strong><p class="small muted">${safe(new Date(state.validation.retentionAt).toLocaleDateString("ru-RU"))}. Используются уже изученные термины.</p></div>`:""}</div>`;
+}
+function skillDeltaHtml(){
+ if(!state.baseline.captured)return "";
+ return `<div class="card"><h3>Рост по навыкам</h3><div class="skill-profile">${Object.entries(PROFESSIONAL_SKILLS).map(([id,label])=>{const before=state.baseline.skills[id],after=skillEntry(id).samples?skillEntry(id).score:null,d=delta(before,after);return `<div class="skill-row"><div class="row between"><span>${label}</span><strong>${before==null||after==null?"—":`${before}% → ${after}% (${deltaText(d)})`}</strong></div><div class="progress"><div style="width:${after||0}%"></div></div></div>`}).join("")}</div></div>`;
+}
+
+const _finishPlacementV14Proficiency=finishPlacement;
+finishPlacement=function(){_finishPlacementV14Proficiency();if(state.placement.done&&!state.baseline.captured)captureBaseline()};
+
+const _renderInvestorV14Proficiency=renderInvestor;
+renderInvestor=function(){
+ _renderInvestorV14Proficiency();
+ if(state.exam.complete&&state.exam.finishedAt){
+  const key="exam:"+state.exam.finishedAt;
+  if(!state.proficiencyHistory.some(x=>x.source===key))proficiencySnapshot(key);
+ }
+};
+
+const _renderDashboardV14Proficiency=renderDashboard;
+renderDashboard=function(){
+ _renderDashboardV14Proficiency();
+ if(state.placement.active)return;
+ const root=$("#view-dashboard");if(root)root.insertAdjacentHTML("beforeend",baselineProgressHtml()+skillDeltaHtml());
 };
 try{renderDashboard()}catch{}
