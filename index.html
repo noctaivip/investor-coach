@@ -65,6 +65,14 @@
     </main>
   </div>
 
+  <nav class="bottom-nav" aria-label="Мобильная навигация">
+    <button class="bottom-nav-item active" data-view="dashboard"><span>⌂</span><small>Главная</small></button>
+    <button class="bottom-nav-item" data-view="learn"><span>▤</span><small>Учить</small></button>
+    <button class="bottom-nav-item" data-view="train"><span>◉</span><small>Практика</small></button>
+    <button class="bottom-nav-item" data-view="investor"><span>◌</span><small>Инвестор</small></button>
+    <button class="bottom-nav-item" data-view="roadmap"><span>✓</span><small>Курс</small></button>
+  </nav>
+
   <div id="installModal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="installModalTitle">
     <div class="modal-card">
       <div class="row between">
@@ -77,6 +85,7 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./config.js"></script>
   <script src="./data.js"></script>
   <script src="./app.js"></script>
 </body>

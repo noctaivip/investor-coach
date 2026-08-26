@@ -1,10 +1,11 @@
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "6.0.0";
 const STATIC_CACHE = `investor-coach-static-${APP_VERSION}`;
 const RUNTIME_CACHE = `investor-coach-runtime-${APP_VERSION}`;
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
+  "./config.js",
   "./data.js",
   "./app.js",
   "./manifest.json",

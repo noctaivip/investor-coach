@@ -1,279 +1,190 @@
-const state = JSON.parse(localStorage.getItem("investorCoachState") || "null") || {
-  day:1, streak:0, learned:{}, correct:0, total:0, weak:[], pitchScores:[], simStep:0, messages:[]
-};
-const $ = s => document.querySelector(s);
-const save = () => localStorage.setItem("investorCoachState", JSON.stringify(state));
-const toast = m => { const t=$("#toast"); t.textContent=m; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1800); };
-const pct = (a,b) => b ? Math.round(a/b*100) : 0;
-const term = id => TERMS.find(x=>x.id===id);
-const CATEGORY_ORDER=["Метрики","Рынок","Финансы","Фандрайзинг","Рост","Коммуникация"];
+const DEFAULT_STATE={day:1,streak:0,learned:{},correct:0,total:0,weak:[],pitchScores:[],simStep:0,messages:[],srs:{},daily:{},voiceScores:[],courseMode:"30",lastStudyDate:""};
+const state=Object.assign({},DEFAULT_STATE,JSON.parse(localStorage.getItem("investorCoachState")||"null")||{});
+state.learned=state.learned||{};state.weak=state.weak||[];state.srs=state.srs||{};state.daily=state.daily||{};state.messages=state.messages||[];state.pitchScores=state.pitchScores||[];state.voiceScores=state.voiceScores||[];
+const $=s=>document.querySelector(s);const $$=s=>[...document.querySelectorAll(s)];
+const save=()=>localStorage.setItem("investorCoachState",JSON.stringify(state));
+const toast=m=>{const t=$("#toast");if(!t)return;t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200)};
+const pct=(a,b)=>b?Math.round(a/b*100):0;const term=id=>TERMS.find(x=>x.id===id);const today=()=>new Date().toISOString().slice(0,10);
+const CATEGORY_ORDER=["Метрики","Рынок","Финансы","Фандрайзинг","Рост","Бизнес","Коммуникация","Право"];
+const SRS_DAYS=[0,1,3,7,14,30,60];
+function srsInfo(id){if(!state.srs[id])state.srs[id]={box:0,due:today(),right:0,wrong:0,last:""};return state.srs[id]}
+function addDays(dateStr,n){const d=new Date((dateStr||today())+"T12:00:00");d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
+function updateSRS(id,ok){const s=srsInfo(id);if(ok){s.box=Math.min(6,(s.box||0)+1);s.right=(s.right||0)+1}else{s.box=Math.max(0,(s.box||0)-1);s.wrong=(s.wrong||0)+1} s.last=today();s.due=addDays(today(),SRS_DAYS[s.box]);state.learned[id]=true;const wi=state.weak.indexOf(id);if(ok&&s.box>=2&&wi>=0)state.weak.splice(wi,1);if(!ok&&wi<0)state.weak.unshift(id);save()}
+function dueTerms(){return TERMS.filter(t=>{const s=state.srs[t.id];return s&&s.due<=today()}).sort((a,b)=>{const A=srsInfo(a.id),B=srsInfo(b.id);return (B.wrong-B.right)-(A.wrong-A.right)})}
+function mastery(){if(!TERMS.length)return 0;return Math.round(TERMS.reduce((n,t)=>n+Math.min(1,(srsInfo(t.id).box||0)/5),0)/TERMS.length*100)}
+function studiedToday(){return Object.values(state.srs).filter(x=>x.last===today()).length}
+function setDaily(key){state.daily[key]=today();save();renderDashboard()}
+function doneDaily(key){return state.daily[key]===today()}
+function safe(s){return String(s??"").replace(/[&<>'"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch]))}
 
-function renderDashboard(){
-  const learned=Object.keys(state.learned).length, avg=pct(state.correct,state.total);
-  $("#view-dashboard").innerHTML = `
-    <div class="grid grid-2">
-      <div class="card hero">
-        <div class="eyebrow hero-eyebrow">МИССИЯ НА СЕГОДНЯ</div>
-        <h2>Думайте как инвестор.</h2>
-        <p>Изучайте терминологию, применяйте её к своему стартапу, проговаривайте ответы вслух и тренируйтесь в симуляциях встречи с инвестором. Слабые темы влияют на следующие упражнения.</p>
-        <div class="row">
-          <button class="btn" onclick="go('train')">Начать тренировку</button>
-          <button class="btn secondary" onclick="go('investor')">Симуляция инвестора</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="eyebrow">30-ДНЕВНАЯ ПРОГРАММА</div>
-        <div class="metric">День ${state.day} из 30</div>
-        <div class="progress"><div style="width:${state.day/30*100}%"></div></div>
-        <p class="muted">Курс адаптируется к ошибкам и слабым терминам.</p>
-        <button class="btn secondary" onclick="go('roadmap')">Открыть программу</button>
-      </div>
-    </div>
-    <div class="grid grid-4 stats-grid">
-      <div class="card"><div class="muted small">Изучено терминов</div><div class="metric">${learned}</div><div class="small muted">из ${TERMS.length}</div></div>
-      <div class="card"><div class="muted small">Точность тестов</div><div class="metric">${avg}%</div><div class="small muted">ответов: ${state.total}</div></div>
-      <div class="card"><div class="muted small">Слабые термины</div><div class="metric">${state.weak.length}</div><div class="small muted">повторить в первую очередь</div></div>
-      <div class="card"><div class="muted small">Оценка pitch</div><div class="metric">${state.pitchScores.length ? Math.round(state.pitchScores.reduce((a,b)=>a+b,0)/state.pitchScores.length) : "—"}</div><div class="small muted">средняя оценка</div></div>
-    </div>
-    <h2 class="section-title">Карта знаний</h2>
-    <div class="grid grid-3">${CATEGORY_ORDER.map(c=>{
-      const ts=TERMS.filter(t=>t.cat===c); const l=ts.filter(t=>state.learned[t.id]).length;
-      return `<div class="card"><div class="between row"><strong>${c}</strong><span class="small muted">${l}/${ts.length}</span></div><div class="progress card-progress"><div style="width:${pct(l,ts.length)}%"></div></div></div>`;
-    }).join("")}</div>
-    <h2 class="section-title">Что изучать дальше</h2>
-    <div class="card"><strong>${state.weak.length && term(state.weak[0]) ? term(state.weak[0]).word : "Retention"}</strong><p class="muted">${state.weak.length ? "Это одна из ваших слабых тем. Закрепите её перед изучением новых терминов." : "Начните с одной из ключевых инвесторских метрик: сколько пользователей остаются с продуктом."}</p><button class="btn" onclick="go('learn')">Перейти к изучению</button></div>
-  `;
-}
+function renderDashboard(){const learned=Object.keys(state.learned).length,avg=pct(state.correct,state.total),due=dueTerms().length,master=mastery();
+$("#view-dashboard").innerHTML=`
+<div class="grid grid-2"><div class="card hero"><div class="eyebrow hero-eyebrow">МИССИЯ НА СЕГОДНЯ</div><h2>Не читать больше. Вспоминать лучше.</h2><p>Курс строится на active recall, интервальном повторении и практике вслух. Ошибки возвращаются чаще, уверенные знания — реже.</p><div class="row"><button class="btn" onclick="go('train')">Начать практику</button><button class="btn secondary" onclick="go('investor')">Голосовая встреча</button></div></div>
+<div class="card"><div class="eyebrow">ПРОГРЕСС</div><div class="metric">${master}% освоения</div><div class="progress"><div style="width:${master}%"></div></div><p class="muted">Сегодня к повторению: <strong>${due}</strong>. Уже затронуто сегодня: <strong>${studiedToday()}</strong>.</p><button class="btn secondary" onclick="go('roadmap')">Открыть курс</button></div></div>
+<div class="grid grid-4 stats-grid"><div class="card"><div class="muted small">Терминов в базе</div><div class="metric">${TERMS.length}</div><div class="small muted">структурированных карточек</div></div><div class="card"><div class="muted small">Точность тестов</div><div class="metric">${avg}%</div><div class="small muted">ответов: ${state.total}</div></div><div class="card"><div class="muted small">Слабые темы</div><div class="metric">${state.weak.length}</div><div class="small muted">возвращаются чаще</div></div><div class="card"><div class="muted small">Голосовая практика</div><div class="metric">${state.voiceScores.length}</div><div class="small muted">завершённых ответов</div></div></div>
+<h2 class="section-title">Сегодняшний цикл обучения</h2><div class="grid grid-4 daily-grid">
+${[["review","1. Повторение",`${Math.min(due,10)} терминов по расписанию`,"train"],["learn","2. Новое",`до 5 новых терминов`,"learn"],["voice","3. Объяснить вслух","1 термин без подсказки","speak"],["sim","4. Инвестор","1 голосовая мини-встреча","investor"]].map(([k,h,p,v])=>`<button class="card daily-task ${doneDaily(k)?'done':''}" onclick="go('${v}')"><span>${doneDaily(k)?'✓':'○'}</span><strong>${h}</strong><small>${p}</small></button>`).join("")}</div>
+<h2 class="section-title">Карта знаний</h2><div class="grid grid-4">${CATEGORY_ORDER.map(c=>{const ts=TERMS.filter(t=>t.cat===c);const m=ts.length?Math.round(ts.reduce((n,t)=>n+Math.min(1,srsInfo(t.id).box/5),0)/ts.length*100):0;return `<div class="card"><div class="between row"><strong>${c}</strong><span class="small muted">${m}%</span></div><div class="progress card-progress"><div style="width:${m}%"></div></div></div>`}).join("")}</div>`}
 
-let learnCat="Все";
-function renderLearn(){
-  const cats=["Все",...new Set(TERMS.map(t=>t.cat))];
-  const list=TERMS.filter(t=>learnCat==="Все"||t.cat===learnCat);
-  $("#view-learn").innerHTML=`
-    <div class="filterbar" aria-label="Фильтр по категориям">${cats.map(c=>`<button class="${c===learnCat?'active':''}" onclick="setLearnCat('${c}')">${c}</button>`).join("")}</div>
-    <div class="grid grid-3">${list.map(t=>`
-      <div class="card term-card">
-        <div><span class="tag">${t.cat}</span><span class="tag">${t.level}</span>
-        <div class="term-word">${t.word}</div><div class="muted small">${t.full}</div>
-        <p class="definition">${t.simple}</p>
-        ${t.formula?`<div class="formula small"><strong>Формула:</strong> ${t.formula}</div>`:""}
-        <details class="term-details"><summary>Контекст инвестора</summary><p class="small">${t.example}</p><p class="small"><strong>Вопрос инвестора:</strong> ${t.investor}</p><p class="small"><strong>Почему это важно:</strong> ${t.why}</p></details>
-        </div>
-        <button class="btn secondary" onclick="markLearned('${t.id}')">${state.learned[t.id]?'✓ Изучено':'Отметить изученным'}</button>
-      </div>`).join("")}</div>`;
-}
-function setLearnCat(c){learnCat=c;renderLearn();}
-function markLearned(id){state.learned[id]=true; save(); renderLearn(); renderDashboard(); toast("Термин добавлен в карту знаний.");}
+let learnCat="Все",learnQuery="";
+function renderLearn(){const cats=["Все",...new Set(TERMS.map(t=>t.cat))];const list=TERMS.filter(t=>(learnCat==="Все"||t.cat===learnCat)&&(!learnQuery||(`${t.word} ${t.full} ${t.simple}`).toLowerCase().includes(learnQuery.toLowerCase())));
+$("#view-learn").innerHTML=`<div class="card learn-intro"><h2>Карточки: сначала попытайтесь вспомнить</h2><p class="muted">Не отмечайте термин прочитанным. Закройте определение рукой или экраном, скажите смысл своими словами, затем откройте пример и только после этого оцените себя.</p><input class="input" placeholder="Поиск по терминам" value="${safe(learnQuery)}" oninput="learnQuery=this.value;renderLearn()"></div><div class="filterbar">${cats.map(c=>`<button class="${c===learnCat?'active':''}" onclick="setLearnCat('${c}')">${c}</button>`).join("")}</div><div class="grid grid-3">${list.map(t=>{const s=srsInfo(t.id);return `<div class="card term-card"><div><span class="tag">${t.cat}</span><span class="tag">${t.level}</span><div class="term-word">${t.word}</div><div class="muted small">${t.full}</div><details class="recall-details"><summary>Проверить себя</summary><p class="definition">${t.simple}</p>${t.formula?`<div class="formula small"><strong>Формула:</strong> ${t.formula}</div>`:""}<p class="small"><strong>Пример:</strong> ${t.example||'Примените термин к своему проекту.'}</p><p class="small"><strong>Вопрос инвестора:</strong> ${t.investor}</p><p class="small"><strong>Почему важно:</strong> ${t.why}</p></details></div><div class="recall-actions"><button class="btn secondary" onclick="rateRecall('${t.id}',false)">Не вспомнил</button><button class="btn" onclick="rateRecall('${t.id}',true)">Вспомнил</button></div><div class="small muted">Уровень памяти: ${s.box}/6 · повтор ${s.due}</div></div>`}).join("")}</div>`}
+function setLearnCat(c){learnCat=c;renderLearn()} function rateRecall(id,ok){updateSRS(id,ok);setDaily('learn');renderLearn();renderDashboard();toast(ok?'Следующее повторение отложено.':'Термин вернётся быстрее.')}
 
-let quizIndex=0, quizAnswered=false, lastAnswer=-1;
-function renderTrain(){
-  const q=QUIZ[quizIndex%QUIZ.length];
-  $("#view-train").innerHTML=`
-    <div class="quiz">
-      <div class="row between"><span class="tag">ТРЕНИРОВКА • ${quizIndex+1}/${QUIZ.length}</span><span class="muted small">Слабые темы повторяются автоматически</span></div>
-      <div class="card quiz-card">
-        <h2>${q.q}</h2>
-        <div>${q.options.map((o,i)=>`<button class="option ${quizAnswered?(i===q.a?'correct':i===lastAnswer?'wrong':''):''}" ${quizAnswered?'disabled':''} onclick="answerQuiz(${i})">${o}</button>`).join("")}</div>
-        ${quizAnswered?`<div class="feedback"><strong>${q.a===lastAnswer?'Верно ✓':'Неверно.'}</strong><br>${q.why}</div><button class="btn feedback-next" onclick="nextQuiz()">Следующий вопрос</button>`:""}
-      </div>
-      <div class="card memory-card"><strong>Правило запоминания</strong><p class="muted">Не заучивайте только аббревиатуру. Свяжите термин с его назначением, примером и вопросом инвестора, на который он отвечает.</p></div>
-    </div>`;
-}
-function answerQuiz(i){
-  if(quizAnswered)return;
-  lastAnswer=i; quizAnswered=true; state.total++;
-  const q=QUIZ[quizIndex%QUIZ.length];
-  if(i===q.a){state.correct++;}
-  else {
-    const found=term(q.termId);
-    if(found&&!state.weak.includes(found.id)) state.weak.unshift(found.id);
-  }
-  save(); renderTrain(); renderDashboard();
-}
-function nextQuiz(){quizIndex++;quizAnswered=false;lastAnswer=-1;renderTrain();}
+let quizIndex=0,quizAnswered=false,lastAnswer=-1,currentQuiz=null;
+function buildQuizQueue(){const dueIds=new Set(dueTerms().map(t=>t.id));const weakIds=new Set(state.weak);const weighted=[...QUIZ].sort((a,b)=>(dueIds.has(b.termId)?3:0)+(weakIds.has(b.termId)?2:0)-((dueIds.has(a.termId)?3:0)+(weakIds.has(a.termId)?2:0)));return weighted}
+function getQuiz(){const q=buildQuizQueue();return q[quizIndex%q.length]}
+function renderTrain(){currentQuiz=getQuiz();const q=currentQuiz;$("#view-train").innerHTML=`<div class="quiz"><div class="row between"><span class="tag">ACTIVE RECALL • ${quizIndex+1}/${QUIZ.length}</span><span class="muted small">Сначала отвечайте из памяти</span></div><div class="card quiz-card"><h2>${q.q}</h2><div>${q.options.map((o,i)=>`<button class="option ${quizAnswered?(i===q.a?'correct':i===lastAnswer?'wrong':''):''}" ${quizAnswered?'disabled':''} onclick="answerQuiz(${i})">${o}</button>`).join("")}</div>${quizAnswered?`<div class="feedback"><strong>${q.a===lastAnswer?'Верно ✓':'Неверно.'}</strong><br>${q.why}</div><button class="btn feedback-next" onclick="nextQuiz()">Следующий вопрос</button>`:""}</div><div class="card memory-card"><strong>Почему это запоминается</strong><p class="muted">Мозг укрепляет доступ к знанию, когда вы извлекаете ответ из памяти. Поэтому приложение чаще возвращает то, где была ошибка, и увеличивает интервалы после нескольких правильных ответов.</p><div class="row"><button class="btn secondary" onclick="go('speak')">Объяснить термин голосом</button><button class="btn secondary" onclick="go('pitch')">Тренировать pitch</button></div></div></div>`}
+function answerQuiz(i){if(quizAnswered)return;lastAnswer=i;quizAnswered=true;state.total++;const q=currentQuiz||getQuiz();const ok=i===q.a;if(ok)state.correct++;updateSRS(q.termId,ok);setDaily('review');save();renderTrain();renderDashboard()}
+function nextQuiz(){quizIndex++;quizAnswered=false;lastAnswer=-1;currentQuiz=null;renderTrain()}
 
-let recognition=null, speakTerm=TERMS.find(t=>t.id==="retention");
-function renderSpeak(){
- $("#view-speak").innerHTML=`
- <div class="grid grid-2">
-  <div class="card">
-   <span class="tag">${speakTerm.cat}</span><h2>${speakTerm.word}</h2><p class="muted">${speakTerm.full}</p>
-   <h3>Объясните термин своими словами.</h3>
-   <textarea id="speakText" placeholder="Напишите или продиктуйте объяснение..."></textarea>
-   <div class="row action-row"><button class="btn" onclick="evaluateSpeak()">Оценить ответ</button><button class="btn secondary" onclick="startSpeech()">🎙 Диктовать</button><button class="btn secondary" onclick="newSpeakTerm()">Следующий термин</button></div>
-   <div id="speakResult"></div>
-  </div>
-  <div class="card"><h3>Контекст инвестора</h3><p>${speakTerm.investor}</p><h3>Пример</h3><p class="muted">${speakTerm.example}</p><h3>Почему это важно</h3><p class="muted">${speakTerm.why}</p></div>
- </div>`;
-}
-function evaluateSpeak(){
- const text=($("#speakText").value||"").trim().toLowerCase();
- const base=(speakTerm.word+" "+speakTerm.full+" "+speakTerm.simple).toLowerCase().replace(/[(),—]/g," ");
- const keywords=[...new Set(base.split(/\s+/).filter(x=>x.length>4))];
- const hits=keywords.filter(k=>text.includes(k)).length;
- const score=Math.min(100,30+hits*15+(text.length>60?25:0));
- if(score<70&&!state.weak.includes(speakTerm.id))state.weak.unshift(speakTerm.id);
- state.learned[speakTerm.id]=true;save();
- $("#speakResult").innerHTML=`<div class="feedback"><strong>Оценка объяснения: ${score}/100</strong><p>${score>=80?"Хорошо. Вы связали термин с его смыслом.":"Нужно ещё потренироваться. Объясните смысл, приведите пример и скажите, почему термин важен инвестору."}</p><p class="small"><strong>Сильный ответ должен включать:</strong> ${speakTerm.simple} + пример + значение для инвестора.</p></div>`;
-}
-function newSpeakTerm(){speakTerm=TERMS[Math.floor(Math.random()*TERMS.length)];renderSpeak();}
-function startSpeech(){
- if(!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)){toast("Распознавание речи недоступно в этом браузере.");return;}
- const R=window.SpeechRecognition||window.webkitSpeechRecognition;
- recognition=new R(); recognition.lang="ru-RU"; recognition.interimResults=false;
- recognition.onresult=e=>{$("#speakText").value=e.results[0][0].transcript;toast("Речь распознана.");};
- recognition.onerror=()=>toast("Не удалось распознать речь.");
- recognition.start(); toast("Слушаю…");
-}
+let speakTerm=TERMS[0];
+function chooseSpeakTerm(){const candidates=[...dueTerms(),...state.weak.map(term).filter(Boolean)];speakTerm=candidates[0]||TERMS[Math.floor(Math.random()*TERMS.length)]}
+function renderSpeak(){if(!speakTerm)chooseSpeakTerm();$("#view-speak").innerHTML=`<div class="grid grid-2"><div class="card voice-card"><span class="tag">ГОЛОСОВОЙ ACTIVE RECALL</span><h2>${speakTerm.word}</h2><p class="muted">${speakTerm.full}</p><h3>Объясните термин своими словами и приведите пример.</h3>${voicePanel('speak')}<div id="speakResult"></div><button class="btn secondary" onclick="newSpeakTerm()">Следующий термин</button></div><div class="card"><h3>После ответа сравните</h3><p><strong>Коротко:</strong> ${speakTerm.simple}</p>${speakTerm.formula?`<p><strong>Формула:</strong> ${speakTerm.formula}</p>`:""}<p><strong>Пример:</strong> ${speakTerm.example||'Сформулируйте собственный пример.'}</p><p><strong>Вопрос инвестора:</strong> ${speakTerm.investor}</p></div></div>`;restoreVoiceTranscript('speak')}
+function newSpeakTerm(){chooseSpeakTerm();voiceBuffers.speak="";renderSpeak()}
+function evaluateSpeak(text){const low=(text||"").toLowerCase();const base=(speakTerm.word+" "+speakTerm.full+" "+speakTerm.simple+" "+(speakTerm.why||"")).toLowerCase().replace(/[(),—]/g," ");const keywords=[...new Set(base.split(/\s+/).filter(x=>x.length>5))];const hits=keywords.filter(k=>low.includes(k)).length;const score=Math.min(100,25+hits*10+(low.length>100?20:0)+(/\d/.test(low)?10:0));updateSRS(speakTerm.id,score>=70);state.voiceScores.push(score);setDaily('voice');save();const el=$("#speakResult");if(el)el.innerHTML=`<div class="feedback"><strong>Оценка объяснения: ${score}/100</strong><p>${score>=80?'Хорошо: смысл воспроизводится из памяти.':score>=60?'Основа есть. Добавьте пример и связь с решением инвестора.':'Повторите термин через короткий интервал и попробуйте снова без подсказки.'}</p><p class="small"><strong>Эталон:</strong> ${speakTerm.simple}</p></div>`;renderDashboard()}
 
-let pitchTopic="BarakaWay";
-const PITCH_LABELS={problem:"Проблема",solution:"Решение",market:"Рынок",traction:"Traction",model:"Модель",ask:"Запрос"};
-function renderPitch(){
- const p=PITCH_TOPICS[pitchTopic];
- $("#view-pitch").innerHTML=`
- <div class="grid grid-2">
-  <div class="card">
-   <div class="row between"><div><span class="tag">5-МИНУТНЫЙ PITCH</span><h2>${pitchTopic}</h2></div><select class="input pitch-select" onchange="pitchTopic=this.value;renderPitch()">${Object.keys(PITCH_TOPICS).map(x=>`<option ${x===pitchTopic?'selected':''}>${x}</option>`).join("")}</select></div>
-   <p class="muted">Используйте эту структуру как опору, затем попробуйте рассказать pitch без чтения. Цель — ясность, а не заучивание.</p>
-   <div class="grid">${Object.entries(p).map(([k,v])=>`<div class="card pitch-part"><strong>${PITCH_LABELS[k]||k}</strong><p class="muted">${v}</p></div>`).join("")}</div>
-  </div>
-  <div class="card">
-   <h3>Соберите собственный pitch</h3>
-   <textarea id="pitchText" placeholder="Напишите или продиктуйте свой pitch..."></textarea>
-   <button class="btn score-pitch" onclick="scorePitch()">Оценить pitch</button>
-   <div id="pitchScore"></div>
-   <div class="small muted pitch-checklist">Проверка: проблема → решение → рынок → traction → модель → конкуренция → команда → инвестиционный запрос.</div>
-  </div>
- </div>`;
-}
-function scorePitch(){
- const t=($("#pitchText").value||"").toLowerCase();
- const signals=[
-  ["проблем", "problem"],["решен", "solution"],["рын", "market"],["traction", "метрик", "рост"],["выруч", "revenue"],["модел", "business"],["клиент", "customer"],["конкур", "competition"],["команд", "team"],["инвест", "финанс", "fund"],["раунд", "просим", "ask"],["рост", "growth"]
- ];
- const present=signals.map(group=>group.some(k=>t.includes(k)));
- const hits=present.filter(Boolean).length, score=Math.min(100,Math.round(hits/signals.length*100));
- state.pitchScores.push(score);save();renderPitch();renderDashboard();
- const missing=["проблема","решение","рынок","traction/метрики","выручка","бизнес-модель","клиент","конкуренция","команда","использование капитала","инвестиционный запрос","рост"].filter((_,i)=>!present[i]);
- setTimeout(()=>{const el=$("#pitchScore"); if(el) el.innerHTML=`<div class="feedback"><div class="row"><div class="score-ring" style="--score:${score}"><span>${score}</span></div><div class="score-copy"><strong>Оценка pitch</strong><p class="muted">${score<60?"Сделайте структуру понятнее.":score<80?"Хорошая основа. Добавьте доказательства и более точные цифры.":"Структура сильная. Теперь тренируйте сложные вопросы инвестора."}</p></div></div><p class="small"><strong>Не хватает сигналов:</strong> ${missing.join(", ")||"основные элементы найдены"}.</p></div>`;},30);
-}
+let pitchTopic="SaaS-стартап";const PITCH_LABELS={problem:"Проблема",solution:"Решение",market:"Рынок",traction:"Traction",model:"Модель",ask:"Запрос"};
+function renderPitch(){const p=PITCH_TOPICS[pitchTopic]||Object.values(PITCH_TOPICS)[0];$("#view-pitch").innerHTML=`<div class="grid grid-2"><div class="card"><div class="row between"><div><span class="tag">ГОЛОСОВОЙ PITCH</span><h2>Рассказ о своём проекте</h2></div><select class="input pitch-select" onchange="pitchTopic=this.value;renderPitch()">${Object.keys(PITCH_TOPICS).map(x=>`<option ${x===pitchTopic?'selected':''}>${x}</option>`).join("")}</select></div><p class="muted">Структура — только опора. Сначала посмотрите, затем уберите подсказку и расскажите всё голосом одним заходом.</p><div class="grid">${Object.entries(p).map(([k,v])=>`<div class="card pitch-part"><strong>${PITCH_LABELS[k]||k}</strong><p class="muted">${v}</p></div>`).join("")}</div></div><div class="card voice-card"><h3>Запишите pitch голосом</h3><p class="muted">Нажмите «Начать». Говорите сколько нужно. Текст будет накапливаться. Нажмите «Отправить pitch» — запись остановится и только тогда ответ будет оценён.</p>${voicePanel('pitch')}<div id="pitchScore"></div><div class="small muted pitch-checklist">Проверка: проблема → решение → рынок → traction → бизнес-модель → конкуренция → команда → раунд → использование капитала.</div></div></div>`;restoreVoiceTranscript('pitch')}
+function scorePitchText(text){const t=(text||"").toLowerCase();const groups=[["проблем","боль"],["решен","продукт"],["рын","tam","sam"],["traction","retention","mrr","выруч","рост"],["модел","saas","подпис"],["клиент","icp","сегмент"],["конкур","альтернатив"],["команд","основател","опыт"],["раунд","привлека","инвест"],["капитал","средств","runway","milestone"]];const present=groups.map(g=>g.some(k=>t.includes(k)));let score=Math.round(present.filter(Boolean).length/groups.length*85);if(t.length>400)score+=8;if(/\d/.test(t))score+=7;score=Math.min(100,score);state.pitchScores.push(score);state.voiceScores.push(score);save();const missing=["проблема","решение","рынок","traction/цифры","модель","ICP","конкуренция","команда","раунд","use of funds"].filter((_,i)=>!present[i]);const el=$("#pitchScore");if(el)el.innerHTML=`<div class="feedback"><strong>Оценка pitch: ${score}/100</strong><p>${score>=80?'Структура сильная. Теперь сокращайте лишнее и тренируйте ответы на вопросы.':score>=60?'Хорошая основа. Добавьте конкретные цифры и причинную связь.':'Pitch пока больше похож на описание продукта. Нужна инвестиционная логика.'}</p><p class="small"><strong>Не хватает:</strong> ${missing.join(', ')||'ключевые блоки найдены'}.</p></div>`;renderDashboard()}
 
-const SIM = [
- {q:"Здравствуйте. Расскажите о компании за одну минуту.",good:["проблем","решен","клиент","customer"],tip:"Начните с проблемы клиента и вашего решения, а не со списка функций."},
- {q:"Кто ваш первый узкий целевой клиентский сегмент?",good:["клиент","сегмент","целев","customer","segment"],tip:"Назовите конкретный первый сегмент. Не отвечайте «все»."},
- {q:"Какой traction у вас уже есть?",good:["пользоват","выруч","retention","рост","клиент","скачив","user","revenue"],tip:"Используйте измеримые доказательства. Скачивания слабее, чем активные пользователи, retention и выручка."},
- {q:"Какой у вас CAC и как вы ожидаете, что он будет меняться?",good:["cac","привлеч","стоим","acquisition","cost"],tip:"Покажите стоимость привлечения и объясните, способен ли канал масштабироваться."},
- {q:"Сколько вы привлекаете и какие milestones профинансирует раунд?",good:["раунд","привлека","миллион","финанс","milestone","маркет","команд","продукт"],tip:"Свяжите капитал с конкретными milestones и runway."},
- {q:"Какой главный риск в вашем бизнесе?",good:["риск","конкур","retention","рын","исполн"],tip:"Назовите реальный риск и объясните, как вы его снижаете."},
- {q:"Почему я должен поверить, что именно вы сможете выиграть рынок?",good:["преимущ","команд","traction","отлич","уник","дистриб"],tip:"Дайте доказательства: инсайт, команда, traction, дистрибуция или устойчивое преимущество."}
+const SIM=[
+{q:"Расскажите о компании за одну минуту.",good:["проблем","решен","клиент","рын"],numbers:false,tip:"Проблема → для кого → решение → доказательство."},
+{q:"Кто ваш первый узкий целевой клиент и почему именно он?",good:["сегмент","клиент","icp","боль"],numbers:false,tip:"Назовите конкретный сегмент, не «все»."},
+{q:"Какие данные доказывают, что продукт нужен рынку?",good:["retention","выруч","mrr","клиент","рост","плат"],numbers:true,tip:"Скачивания слабее retention, активного использования и выручки."},
+{q:"Какова ваша unit economics: CAC, LTV, gross margin и payback?",good:["cac","ltv","марж","payback","окуп"],numbers:true,tip:"Если метрики ещё неизвестны, честно назовите, что измеряете и к какой дате получите данные."},
+{q:"Как вы будете масштабировать go-to-market без пропорционального роста затрат?",good:["gtm","канал","organic","plg","sales","cac","conversion"],numbers:false,tip:"Опишите повторяемый канал и economics."},
+{q:"Кто ваши конкуренты и почему вы выиграете?",good:["конкур","альтернатив","moat","преимущ","position"],numbers:false,tip:"Никогда не отвечайте «конкурентов нет»."},
+{q:"Сколько вы привлекаете, на сколько месяцев runway и какие milestones должны получить?",good:["раунд","привлека","runway","месяц","milestone","капитал"],numbers:true,tip:"Свяжите сумму с временем и измеримыми результатами."},
+{q:"Назовите три главных риска и что вы делаете для их снижения.",good:["риск","если","сниз","провер","план"],numbers:false,tip:"Сильный основатель не отрицает риск, а управляет им."},
+{q:"Почему именно ваша команда имеет право выиграть этот рынок?",good:["опыт","команд","insight","сеть","эксперт","traction"],numbers:false,tip:"Founder-market fit — конкретный опыт и уникальный insight."},
+{q:"Почему сейчас правильный момент для этой компании?",good:["сейчас","рынок","технолог","регуля","поведен","измен"],numbers:false,tip:"Why Now должно опираться на изменение среды, а не на желание основателя."}
 ];
-function renderInvestor(){
- const msgs=state.messages.length?state.messages:[{who:"ai",text:SIM[0].q}];
- $("#view-investor").innerHTML=`
- <div class="grid grid-2">
-  <div class="card"><div class="row between"><div><span class="tag">ПРАКТИКА</span><h2>Встреча с инвестором</h2></div><span class="muted small">${Math.min(state.simStep+1,SIM.length)}/${SIM.length}</span></div>
-   <div class="sim-chat" id="simChat">${msgs.map(m=>`<div class="bubble ${m.who}">${escapeHtml(m.text)}</div>`).join("")}</div>
-   <textarea id="simInput" class="sim-input" placeholder="Ответьте инвестору своими словами..."></textarea>
-   <div class="row action-row"><button class="btn" onclick="sendSim()">Отправить ответ</button><button class="btn secondary" onclick="resetSim()">Начать заново</button></div>
-  </div>
-  <div class="card"><h3>Логика инвестора</h3><p class="muted">Тренер проверяет, отвечает ли ваш текст на вопрос, содержит ли конкретные доказательства и избегает ли типичных red flags.</p>
-   <div id="simFeedback">${state.simStep?`<div class="feedback"><strong>Подсказка:</strong> ${SIM[Math.min(state.simStep-1,SIM.length-1)].tip}</div>`:`<div class="feedback">Начните с короткого и конкретного ответа. Следующий вопрос зависит от вашего прогресса.</div>`}</div>
-   <h3>Типичные red flags</h3>
-   <div>${["У нас нет конкурентов.","Наш клиент — каждый человек.","Нам нужен только маркетинг.","Скачивания доказывают product-market fit.","Мы не знаем наши ключевые цифры.","Наша valuation основана только на том, сколько сил мы вложили."].map(x=>`<span class="tag red-flag">🚩 ${x}</span>`).join("")}</div>
-  </div>
- </div>`;
- const chat=$("#simChat"); if(chat) chat.scrollTop=chat.scrollHeight;
-}
-function escapeHtml(value){return String(value).replace(/[&<>'"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[ch]));}
-function sendSim(){
- const input=($("#simInput").value||"").trim(); if(!input)return;
- const step=Math.min(state.simStep,SIM.length-1), s=SIM[step], low=input.toLowerCase();
- const hits=s.good.filter(k=>low.includes(k)).length;
- const score=Math.min(100,Math.round(45+hits/s.good.length*55));
- state.messages.push({who:"you",text:input},{who:"ai",text:step+1<SIM.length?SIM[step+1].q:"Отлично. Вы завершили базовую симуляцию встречи. Повторите её ещё раз и постарайтесь отвечать точнее и жёстче по цифрам."});
- state.simStep=Math.min(state.simStep+1,SIM.length);save();renderInvestor();
- setTimeout(()=>{const f=$("#simFeedback");if(f)f.innerHTML=`<div class="feedback"><strong>Оценка ответа: ${score}/100</strong><p>${score>=80?"Сильный ответ.":"Сделайте ответ короче и подкрепите его фактами или цифрами."}</p><p class="small">${s.tip}</p></div>`;},20);
-}
-function resetSim(){state.simStep=0;state.messages=[];save();renderInvestor();}
+function renderInvestor(){const msgs=state.messages.length?state.messages:[{who:"ai",text:SIM[Math.min(state.simStep,SIM.length-1)].q}];$("#view-investor").innerHTML=`<div class="grid grid-2"><div class="card voice-card"><div class="row between"><div><span class="tag">ГОЛОСОВОЙ СИМУЛЯТОР</span><h2>Встреча с инвестором</h2></div><span class="muted small">${Math.min(state.simStep+1,SIM.length)}/${SIM.length}</span></div><div class="sim-chat" id="simChat">${msgs.map(m=>`<div class="bubble ${m.who}">${safe(m.text)}</div>`).join("")}</div><p class="muted">Ответьте голосом. Можно говорить долго: распознанный текст накапливается. Ответ уходит только после кнопки «Отправить ответ».</p>${voicePanel('sim')}<div class="row"><button class="btn secondary" onclick="resetSim()">Начать заново</button></div></div><div class="card"><h3>Что оценивает тренер</h3><p class="muted">Прямой ответ на вопрос, конкретика, цифры там, где они нужны, отсутствие red flags и понимание причинно-следственной связи.</p><div id="simFeedback"><div class="feedback">${state.simStep?'Следующий вопрос сложнее предыдущего.':'Начните коротко и конкретно.'}</div></div><h3>Red flags</h3><div>${["У нас нет конкурентов","Наш клиент — каждый","Скачивания = PMF","Нам нужен только маркетинг","Мы не знаем ключевые метрики"].map(x=>`<span class="tag red-flag">🚩 ${x}</span>`).join("")}</div></div></div>`;const chat=$("#simChat");if(chat)chat.scrollTop=chat.scrollHeight;restoreVoiceTranscript('sim')}
+function evaluateSim(text){const step=Math.min(state.simStep,SIM.length-1),s=SIM[step],low=(text||"").toLowerCase();const hits=s.good.filter(k=>low.includes(k)).length;let score=40+Math.round(hits/Math.max(1,s.good.length)*45);if(s.numbers&&/\d/.test(low))score+=15;score=Math.min(100,score);state.messages.push({who:"you",text:text},{who:"ai",text:step+1<SIM.length?SIM[step+1].q:"Базовая встреча завершена. Повторите её позже: вопросы те же, но ответы должны стать короче, точнее и сильнее по цифрам."});state.simStep=Math.min(step+1,SIM.length);state.voiceScores.push(score);setDaily('sim');save();voiceBuffers.sim="";renderInvestor();setTimeout(()=>{const f=$("#simFeedback");if(f)f.innerHTML=`<div class="feedback"><strong>Оценка ответа: ${score}/100</strong><p>${score>=80?'Сильный ответ.':score>=60?'Смысл есть, но добавьте больше доказательств и точности.':'Ответ пока не закрывает инвесторский вопрос.'}</p><p class="small">${s.tip}</p></div>`},30);renderDashboard()}
+function resetSim(){state.simStep=0;state.messages=[];voiceBuffers.sim="";save();renderInvestor()}
 
-function renderRoadmap(){
- $("#view-roadmap").innerHTML=`<div class="card"><div class="row between roadmap-head"><div><span class="tag">30 ДНЕЙ</span><h2>Путь к готовности к инвестору</h2><p class="muted">Последовательная программа: язык → метрики → pitch → переговоры → полная симуляция.</p></div><div class="score-ring" style="--score:${state.day/30*100}"><span>${state.day}</span></div></div></div>
- <div class="timeline roadmap-timeline">${COURSE.map((c,i)=>{const d=i<4?i*2+1:i<8?i+9:i<12?i*2+13:25;const done=state.day>d;return `<div class="card day ${done?'done':''}"><div class="day-num">${done?'✓':'Д'+d}</div><div><h3>${c[0]}</h3><p>${c[1]}</p><div class="roadmap-tag"><span class="tag">${i<4?'Основа':i<8?'Ключевые навыки':i<12?'Продвинутый уровень':'Симуляция'}</span></div></div></div>`;}).join("")}</div>
- <div class="card roadmap-rule"><h3>Правило адаптации</h3><p class="muted">Каждый неверный ответ становится кандидатом на повторение. Термины, в которых вы ошибаетесь чаще, поднимаются в приоритете следующих тренировок.</p><button class="btn" onclick="advanceDay()">Завершить сегодняшний день</button></div>`;
-}
-function advanceDay(){if(state.day<30){state.day++;state.streak++;save();renderAll();toast("День завершён. Новая тренировка открыта.");}else toast("30-дневный курс завершён!");}
+function renderRoadmap(){const mode=state.courseMode||"30";const arr=mode==="7"?WEEK_COURSE:COURSE;$("#view-roadmap").innerHTML=`<div class="card"><div class="row between roadmap-head"><div><span class="tag">УЧЕБНЫЙ ТРЕК</span><h2>${mode==='7'?'Интенсив за 7 дней':'Системный курс на 30 дней'}</h2><p class="muted">Курс не заменяет повторения: завершённый день не считается освоенным, пока слабые темы не прошли несколько успешных интервалов.</p></div><div class="course-switch"><button class="${mode==='7'?'active':''}" onclick="setCourseMode('7')">7 дней</button><button class="${mode==='30'?'active':''}" onclick="setCourseMode('30')">30 дней</button></div></div></div><div class="timeline roadmap-timeline">${arr.map((c,i)=>{const d=i+1,done=mode==='30'&&state.day>d;return `<div class="card day ${done?'done':''}"><div class="day-num">${done?'✓':'Д'+d}</div><div><h3>${c[0]}</h3><p>${c[1]}</p><div class="row"><button class="btn secondary" onclick="go('learn')">Термины</button><button class="btn secondary" onclick="go('train')">Тест</button>${d>=5?`<button class="btn secondary" onclick="go('investor')">Голосовая практика</button>`:''}</div></div></div>`}).join("")}</div>${mode==='30'?`<div class="card roadmap-rule"><h3>Завершение дня</h3><p class="muted">Завершайте день после активного повторения, а не после чтения. На следующий день приложение снова покажет то, что пора вспоминать.</p><button class="btn" onclick="advanceDay()">Завершить сегодняшний день</button></div>`:''}`}
+function setCourseMode(m){state.courseMode=m;save();renderRoadmap()} function advanceDay(){if(state.day<30){state.day++;state.streak++;save();renderAll();toast("День завершён. Повторения уже запланированы.")}else toast("30-дневный курс завершён")}
 
-const views={dashboard:"Главная",learn:"Изучение",train:"Тренировка",speak:"Говори",pitch:"Pitch",investor:"Симуляция инвестора",roadmap:"Курс на 30 дней"};
-function go(v){
- document.querySelectorAll(".view").forEach(x=>x.classList.remove("active"));
- $("#view-"+v).classList.add("active");
- document.querySelectorAll(".nav-item").forEach(x=>x.classList.toggle("active",x.dataset.view===v));
- $("#pageTitle").textContent=views[v];renderView(v);window.scrollTo({top:0,behavior:"smooth"});
- if(innerWidth<721)$("#nav").parentElement.classList.remove("open");
-}
-function renderView(v){({dashboard:renderDashboard,learn:renderLearn,train:renderTrain,speak:renderSpeak,pitch:renderPitch,investor:renderInvestor,roadmap:renderRoadmap})[v]();}
-function renderAll(){renderDashboard();renderLearn();renderTrain();renderSpeak();renderPitch();renderInvestor();renderRoadmap();$("#streak").textContent=state.streak;$("#dayLabel").textContent=`День ${state.day} из 30`;$("#sideProgress").style.width=(state.day/30*100)+"%";}
+// Voice capture: accumulated speech is only submitted when the user presses Send.
+const voiceBuffers={speak:"",pitch:"",sim:""};let recognition=null,voiceChannel=null,voiceRunning=false,voiceStoppingForSend=false;
+function voicePanel(ch){return `<div class="voice-recorder" id="voice-${ch}"><div class="voice-status"><span class="rec-dot"></span><strong id="voiceStatus-${ch}">Готов к записи</strong><small>Распознавание речи выполняет браузер</small></div><div class="voice-transcript" id="voiceTranscript-${ch}">Ваш распознанный ответ появится здесь.</div><div class="row action-row"><button class="btn" id="voiceStart-${ch}" onclick="toggleVoice('${ch}')">🎙 Начать голосовой ответ</button><button class="btn send-voice" onclick="submitVoice('${ch}')">➤ Отправить</button></div></div>`}
+function speechAvailable(){return 'SpeechRecognition' in window||'webkitSpeechRecognition' in window}
+function restoreVoiceTranscript(ch){const el=$("#voiceTranscript-"+ch);if(el&&voiceBuffers[ch])el.textContent=voiceBuffers[ch]}
+function setVoiceUI(ch,status,running){const st=$("#voiceStatus-"+ch),btn=$("#voiceStart-"+ch),wrap=$("#voice-"+ch);if(st)st.textContent=status;if(btn)btn.textContent=running?'⏸ Пауза':'🎙 Продолжить запись';if(wrap)wrap.classList.toggle('recording',running)}
+function toggleVoice(ch){if(voiceRunning&&voiceChannel===ch){stopVoice(false);return}startVoice(ch)}
+function startVoice(ch){if(!speechAvailable()){toast("В этом браузере нет SpeechRecognition. Для голосовой тренировки используйте Chrome/Edge на Android/desktop или Safari с поддержкой распознавания речи.");return}if(voiceRunning)stopVoice(false);const R=window.SpeechRecognition||window.webkitSpeechRecognition;recognition=new R();recognition.lang='ru-RU';recognition.continuous=true;recognition.interimResults=true;voiceChannel=ch;voiceRunning=true;voiceStoppingForSend=false;let sessionFinal="";recognition.onstart=()=>setVoiceUI(ch,'Идёт запись…',true);recognition.onresult=e=>{let interim="";for(let i=e.resultIndex;i<e.results.length;i++){const tx=e.results[i][0].transcript;if(e.results[i].isFinal)sessionFinal+=(sessionFinal?' ':'')+tx;else interim+=tx}const base=[voiceBuffers[ch],sessionFinal].filter(Boolean).join(' ').trim();const el=$("#voiceTranscript-"+ch);if(el)el.textContent=(base+(interim?' '+interim:'')).trim()||'Слушаю…'};recognition.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')toast('Ошибка распознавания: '+e.error)};recognition.onend=()=>{if(sessionFinal){voiceBuffers[ch]=[voiceBuffers[ch],sessionFinal].filter(Boolean).join(' ').trim();sessionFinal=""}restoreVoiceTranscript(ch);if(voiceRunning&&voiceChannel===ch&&!voiceStoppingForSend){try{recognition.start();return}catch(_){}}voiceRunning=false;setVoiceUI(ch,'Запись остановлена',false);if(voiceStoppingForSend){voiceStoppingForSend=false;finalSubmit(ch)}};try{recognition.start()}catch(e){voiceRunning=false;toast('Не удалось запустить микрофон')}}
+function stopVoice(forSend){if(!voiceRunning||!recognition){if(forSend)finalSubmit(voiceChannel);return}voiceStoppingForSend=forSend;voiceRunning=false;try{recognition.stop()}catch(_){if(forSend)finalSubmit(voiceChannel)}}
+function submitVoice(ch){voiceChannel=ch;if(voiceRunning&&voiceChannel===ch){voiceStoppingForSend=true;voiceRunning=false;try{recognition.stop()}catch(_){finalSubmit(ch)}}else finalSubmit(ch)}
+function finalSubmit(ch){const text=(voiceBuffers[ch]||"").trim();if(!text){toast("Сначала запишите голосовой ответ.");return}setVoiceUI(ch,'Ответ отправлен',false);if(ch==='speak')evaluateSpeak(text);if(ch==='pitch')scorePitchText(text);if(ch==='sim')evaluateSim(text)}
 
-document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>go(b.dataset.view)));
-$("#mobileMenu").addEventListener("click",()=>$("#nav").parentElement.classList.toggle("open"));
-document.addEventListener("click",e=>{if(innerWidth<721&&!e.target.closest(".sidebar")&&!e.target.closest("#mobileMenu"))$(".sidebar").classList.remove("open");});
+const views={dashboard:"Главная",learn:"Изучение",train:"Практика",speak:"Говори",pitch:"Pitch",investor:"Симуляция инвестора",roadmap:"Курс"};
+function go(v){if(voiceRunning)stopVoice(false);$$('.view').forEach(x=>x.classList.remove('active'));const target=$("#view-"+v);if(target)target.classList.add('active');$$('.nav-item,.bottom-nav-item').forEach(x=>x.classList.toggle('active',x.dataset.view===v));$("#pageTitle").textContent=views[v]||v;renderView(v);window.scrollTo({top:0,behavior:'smooth'});const sb=$('.sidebar');if(sb)sb.classList.remove('open')}
+function renderView(v){({dashboard:renderDashboard,learn:renderLearn,train:renderTrain,speak:renderSpeak,pitch:renderPitch,investor:renderInvestor,roadmap:renderRoadmap})[v]?.()}
+function renderAll(){renderDashboard();renderLearn();renderTrain();renderSpeak();renderPitch();renderInvestor();renderRoadmap();$("#streak").textContent=state.streak;$("#dayLabel").textContent=`День ${state.day} из 30`;$("#sideProgress").style.width=(state.day/30*100)+'%'}
+$$('.nav-item,.bottom-nav-item').forEach(b=>b.addEventListener('click',()=>go(b.dataset.view)));const mm=$("#mobileMenu");if(mm)mm.addEventListener('click',()=>$('.sidebar').classList.toggle('open'));renderAll();
+
+// PWA installation/update logic kept intact and update checks remain network-first.
+let deferredInstallPrompt=null;const isStandalone=()=>matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent);
+function setInstallState(){const b=$("#installApp"),t=$("#installState");if(!b||!t)return;if(isStandalone()){b.hidden=true;t.hidden=false;t.textContent='Приложение установлено'}else{t.hidden=true;b.hidden=false;b.textContent='Установить приложение'}}
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPrompt=e;setInstallState()});addEventListener('appinstalled',()=>{deferredInstallPrompt=null;setInstallState();toast('Приложение установлено')});
+async function installApp(){if(isStandalone()){setInstallState();return}if(deferredInstallPrompt){deferredInstallPrompt.prompt();await deferredInstallPrompt.userChoice;deferredInstallPrompt=null;setInstallState();return}openInstallHelp()}
+function openInstallHelp(){const m=$("#installModal"),body=$("#installHelpText");if(isIOS())body.innerHTML='<strong>iPhone / iPad:</strong><br>1. Откройте сайт в Safari.<br>2. Нажмите <strong>«Поделиться»</strong>.<br>3. Выберите <strong>«На экран „Домой“»</strong>.<br>4. Подтвердите добавление.';else body.innerHTML='<strong>Android:</strong><br>Откройте меню браузера и выберите <strong>«Установить приложение»</strong> или используйте системную кнопку установки.';m.hidden=false;document.body.classList.add('modal-open')}
+function closeInstallHelp(){$("#installModal").hidden=true;document.body.classList.remove('modal-open')}$("#installApp")?.addEventListener('click',installApp);$("#installClose")?.addEventListener('click',closeInstallHelp);$("#installModal")?.addEventListener('click',e=>{if(e.target.id==='installModal')closeInstallHelp()});setInstallState();
+if('serviceWorker' in navigator)addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();let refreshing=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(refreshing)return;refreshing=true;location.reload()});reg.addEventListener('updatefound',()=>{const w=reg.installing;if(!w)return;w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller)w.postMessage({type:'SKIP_WAITING'})})})}catch(err){console.error('Service Worker:',err)}});
+
+
+/* ===== Production learning engine + AI Investor v5 ===== */
+state.aiMemory=state.aiMemory||"";
+state.aiHistory=state.aiHistory||[];
+state.aiWeakTopics=state.aiWeakTopics||[];
+state.aiScores=state.aiScores||[];
+state.projectProfile=state.projectProfile||{};
+state.sessionPlan=state.sessionPlan||{};
+
+function apiBase(){return (localStorage.getItem('investorCoachApiBase')||(window.INVESTOR_COACH_CONFIG&&window.INVESTOR_COACH_CONFIG.apiBase)||'').replace(/\/$/,'')}
+function aiReady(){return /^https:\/\//.test(apiBase())}
+function saveApiBase(){const el=document.querySelector('#aiApiBase');if(!el)return;const v=el.value.trim().replace(/\/$/,'');if(v&&!/^https:\/\//.test(v)){toast('Нужен HTTPS URL AI-backend.');return}localStorage.setItem('investorCoachApiBase',v);toast(v?'AI-backend сохранён.':'AI-backend отключён.');renderAll()}
+function aiStatusHtml(){return aiReady()?'<span class="ai-pill online">● AI подключён</span>':'<span class="ai-pill offline">● Локальный режим</span>'}
+function priorityScore(t){const s=srsInfo(t.id),now=new Date(today()+'T12:00:00'),due=new Date((s.due||today())+'T12:00:00');const overdue=Math.max(0,Math.round((now-due)/86400000));const attempts=(s.right||0)+(s.wrong||0);const errorRate=attempts?(s.wrong||0)/attempts:.45;const novelty=attempts?0:1;const weak=state.weak.includes(t.id)?2:0;const aiWeak=state.aiWeakTopics.some(x=>(t.word+' '+t.cat+' '+t.full).toLowerCase().includes(String(x).toLowerCase()))?1.5:0;return overdue*1.6+errorRate*4+novelty*2+weak+aiWeak-(s.box||0)*.7}
+buildQuizQueue=function(){return [...QUIZ].sort((a,b)=>priorityScore(term(b.termId)||TERMS[0])-priorityScore(term(a.termId)||TERMS[0]))}
+chooseSpeakTerm=function(){speakTerm=[...TERMS].sort((a,b)=>priorityScore(b)-priorityScore(a))[0]||TERMS[0]}
+function readinessScore(){const knowledge=mastery();const voice=state.aiScores.length?Math.round(state.aiScores.slice(-10).reduce((a,b)=>a+b,0)/Math.min(10,state.aiScores.length)):(state.voiceScores.length?Math.round(state.voiceScores.slice(-10).reduce((a,b)=>a+b,0)/Math.min(10,state.voiceScores.length)):0);const tests=pct(state.correct,state.total);return Math.round(knowledge*.4+tests*.25+voice*.35)}
+function todayPlan(){const due=dueTerms().slice(0,8).map(t=>t.word);const weak=[...TERMS].sort((a,b)=>priorityScore(b)-priorityScore(a)).slice(0,3).map(t=>t.word);return {review:due,newCount:Math.min(4,Math.max(1,8-due.length)),voice:weak[0]||'CAC',investor:state.aiWeakTopics[0]||weak[1]||'unit economics'} }
+const _renderDashboardProd=renderDashboard;
+renderDashboard=function(){_renderDashboardProd();const root=document.querySelector('#view-dashboard');if(!root)return;const plan=todayPlan(),ready=readinessScore();const box=document.createElement('div');box.innerHTML=`<h2 class="section-title">Адаптивный движок</h2><div class="grid grid-2"><div class="card"><div class="row between"><div><span class="tag">INVESTOR READINESS</span><div class="metric">${ready}/100</div></div>${aiStatusHtml()}</div><p class="muted">Оценка объединяет долговременное удержание знаний, тесты и качество практических ответов. Следующая сессия строится по вероятности забывания и ошибкам.</p></div><div class="card"><h3>Следующая сессия</h3><p><strong>Повторить:</strong> ${plan.review.join(', ')||'по расписанию ничего срочного'}</p><p><strong>Голосом:</strong> ${safe(plan.voice)}</p><p><strong>Инвестор будет давить на:</strong> ${safe(plan.investor)}</p></div></div>`;root.appendChild(box)}
+
+async function aiCoach(mode,text,extra={}){if(!aiReady())throw new Error('AI_NOT_CONFIGURED');const payload={mode,transcript:text,memory:state.aiMemory,history:state.aiHistory.slice(-12),weak_topics:state.aiWeakTopics.slice(0,12),course_day:state.day,project_profile:state.projectProfile,context:extra};const r=await fetch(apiBase()+'/api/coach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!r.ok){const e=await r.text();throw new Error('AI '+r.status+': '+e.slice(0,180))}return r.json()}
+function applyAiResult(res,mode,userText){const score=Math.max(0,Math.min(100,Number(res.score)||0));state.aiScores.push(score);state.voiceScores.push(score);state.aiMemory=String(res.memory_summary||state.aiMemory||'').slice(0,6000);state.aiWeakTopics=[...new Set([...(res.focus_topics||[]),...state.aiWeakTopics])].slice(0,20);state.aiHistory.push({role:'user',text:userText.slice(0,5000)},{role:'investor',text:String(res.next_question||res.verdict||'').slice(0,1500)});state.aiHistory=state.aiHistory.slice(-30);save();return score}
+function feedbackHtml(res){return `<div class="feedback ai-feedback"><div class="row between"><strong>AI-оценка: ${safe(res.score)}/100</strong><span class="tag">production AI</span></div><p>${safe(res.verdict)}</p>${(res.strengths||[]).length?`<p><strong>Сильные стороны:</strong> ${(res.strengths||[]).map(safe).join(' • ')}</p>`:''}${(res.improvements||[]).length?`<p><strong>Исправить:</strong> ${(res.improvements||[]).map(safe).join(' • ')}</p>`:''}${(res.red_flags||[]).length?`<p><strong>Red flags:</strong> ${(res.red_flags||[]).map(safe).join(' • ')}</p>`:''}${res.model_answer?`<details><summary>Показать сильный вариант ответа</summary><p>${safe(res.model_answer)}</p></details>`:''}</div>`}
+
+const _renderPitchProd=renderPitch;
+renderPitch=function(){_renderPitchProd();const card=document.querySelector('#view-pitch .voice-card');if(card){const badge=document.createElement('div');badge.className='ai-mode-line';badge.innerHTML=`${aiStatusHtml()} <span class="small muted">При AI-режиме оценивается смысл, логика, цифры, investor narrative и риски.</span>`;card.prepend(badge)}}
+renderInvestor=function(){const msgs=state.messages.length?state.messages:[{who:'ai',text:(state.aiHistory.slice().reverse().find(x=>x.role==='investor')||{}).text||SIM[Math.min(state.simStep,SIM.length-1)].q}];document.querySelector('#view-investor').innerHTML=`<div class="grid grid-2"><div class="card voice-card"><div class="row between"><div><span class="tag">PRODUCTION AI INVESTOR</span><h2>Голосовая встреча с инвестором</h2></div>${aiStatusHtml()}</div><div class="sim-chat" id="simChat">${msgs.map(m=>`<div class="bubble ${m.who}">${safe(m.text)}</div>`).join('')}</div><p class="muted">Нажмите запись, говорите как на реальной встрече и только затем нажмите «Отправить». В AI-режиме вопрос формируется из вашего предыдущего ответа и слабых мест, а не идёт по фиксированному скрипту.</p>${voicePanel('sim')}<div class="row"><button class="btn secondary" onclick="resetSim()">Новая встреча</button></div></div><div class="card"><h3>AI-память и адаптация</h3><p class="muted">Инвестор помнит факты вашего проекта, замечает противоречия и возвращается к слабым темам.</p><div id="simFeedback"><div class="feedback">${state.aiMemory?safe(state.aiMemory):'Память проекта сформируется после первых ответов.'}</div></div>${!aiReady()?`<div class="ai-connect"><h3>Подключить production AI</h3><p class="small muted">GitHub Pages не хранит секретные API-ключи. Разверните backend из папки <code>backend</code> и вставьте его HTTPS URL один раз.</p><input id="aiApiBase" class="input" placeholder="https://investor-coach-ai.YOUR.workers.dev" value="${safe(apiBase())}"><button class="btn" onclick="saveApiBase()">Сохранить AI URL</button></div>`:''}</div></div>`;const chat=document.querySelector('#simChat');if(chat)chat.scrollTop=chat.scrollHeight;restoreVoiceTranscript('sim')}
+
+async function evaluateWithAI(ch,text){const status=document.querySelector('#voiceStatus-'+ch);if(status)status.textContent='AI анализирует ответ…';try{const extra=ch==='speak'?{term:{word:speakTerm.word,definition:speakTerm.simple,example:speakTerm.example,investor:speakTerm.investor}}:ch==='pitch'?{pitch_topic:pitchTopic}:{};const res=await aiCoach(ch,text,extra);const score=applyAiResult(res,ch,text);if(ch==='speak'){updateSRS(speakTerm.id,score>=75);setDaily('voice');const el=document.querySelector('#speakResult');if(el)el.innerHTML=feedbackHtml(res)}else if(ch==='pitch'){state.pitchScores.push(score);const el=document.querySelector('#pitchScore');if(el)el.innerHTML=feedbackHtml(res)}else if(ch==='sim'){state.messages.push({who:'you',text},{who:'ai',text:res.next_question||'Продолжайте.'});setDaily('sim');voiceBuffers.sim='';renderInvestor();setTimeout(()=>{const f=document.querySelector('#simFeedback');if(f)f.innerHTML=feedbackHtml(res)},20)}save();renderDashboard();if(status)status.textContent='Ответ оценён'}catch(e){console.error(e);toast(e.message==='AI_NOT_CONFIGURED'?'AI не подключён — использую локальную оценку.':'AI временно недоступен — использую локальную оценку.');if(ch==='speak')evaluateSpeak(text);if(ch==='pitch')scorePitchText(text);if(ch==='sim')evaluateSim(text)}}
+
+// Real recorder: audio is kept locally until Send, then transcribed server-side.
+const mediaState={recorder:null,stream:null,ch:null,chunks:[],startedAt:0};
+function canMediaRecord(){return !!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia&&window.MediaRecorder)}
+voicePanel=function(ch){return `<div class="voice-recorder" id="voice-${ch}"><div class="voice-status"><span class="rec-dot"></span><strong id="voiceStatus-${ch}">Готов к записи</strong><small>${aiReady()?'Аудио отправляется только после кнопки «Отправить»':'Локальное распознавание; production AI можно подключить отдельно'}</small></div><div class="voice-transcript" id="voiceTranscript-${ch}">${voiceBuffers[ch]||'Во время записи можно говорить свободно. Текст появится после отправки.'}</div><div class="row action-row"><button class="btn" id="voiceStart-${ch}" onclick="toggleVoice('${ch}')">🎙 Начать запись</button><button class="btn send-voice" onclick="submitVoice('${ch}')">➤ Отправить</button></div></div>`}
+async function startMediaVoice(ch){if(mediaState.recorder&&mediaState.recorder.state==='recording')return;try{const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});let mime='';for(const t of ['audio/webm;codecs=opus','audio/mp4','audio/webm']){if(MediaRecorder.isTypeSupported(t)){mime=t;break}}const rec=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);mediaState.recorder=rec;mediaState.stream=stream;mediaState.ch=ch;mediaState.chunks=[];mediaState.startedAt=Date.now();voiceChannel=ch;voiceRunning=true;rec.ondataavailable=e=>{if(e.data&&e.data.size)mediaState.chunks.push(e.data)};rec.onstop=()=>{voiceRunning=false;setVoiceUI(ch,'Запись готова к отправке',false);stream.getTracks().forEach(t=>t.stop())};rec.start(1000);setVoiceUI(ch,'Идёт запись…',true);const el=document.querySelector('#voiceTranscript-'+ch);if(el)el.textContent='● Запись идёт. Нажмите «Отправить», когда закончите.'}catch(e){console.error(e);toast('Нет доступа к микрофону.');}}
+toggleVoice=async function(ch){if(aiReady()&&canMediaRecord()){if(mediaState.recorder&&mediaState.recorder.state==='recording'&&mediaState.ch===ch){mediaState.recorder.pause();setVoiceUI(ch,'Пауза',false);voiceRunning=false;return}if(mediaState.recorder&&mediaState.recorder.state==='paused'&&mediaState.ch===ch){mediaState.recorder.resume();setVoiceUI(ch,'Идёт запись…',true);voiceRunning=true;return}await startMediaVoice(ch);return}if(voiceRunning&&voiceChannel===ch){stopVoice(false);return}startVoice(ch)}
+async function transcribeBlob(blob){const fd=new FormData();const ext=blob.type.includes('mp4')?'m4a':'webm';fd.append('file',blob,'answer.'+ext);fd.append('language','ru');const r=await fetch(apiBase()+'/api/transcribe',{method:'POST',body:fd});if(!r.ok)throw new Error('TRANSCRIBE_'+r.status);const j=await r.json();return (j.text||'').trim()}
+submitVoice=async function(ch){voiceChannel=ch;if(aiReady()&&mediaState.recorder&&mediaState.ch===ch&&(mediaState.recorder.state==='recording'||mediaState.recorder.state==='paused')){const rec=mediaState.recorder;const done=new Promise(resolve=>rec.addEventListener('stop',resolve,{once:true}));if(rec.state==='paused')rec.resume();rec.stop();await done;const blob=new Blob(mediaState.chunks,{type:rec.mimeType||'audio/webm'});if(blob.size<1000){toast('Запись слишком короткая.');return}setVoiceUI(ch,'Распознаю запись…',false);try{const text=await transcribeBlob(blob);voiceBuffers[ch]=text;const el=document.querySelector('#voiceTranscript-'+ch);if(el)el.textContent=text||'Речь не распознана.';if(!text){toast('Не удалось распознать речь.');return}await evaluateWithAI(ch,text)}catch(e){console.error(e);toast('Не удалось отправить аудио. Проверьте AI-backend.')}finally{mediaState.recorder=null;mediaState.chunks=[]}return}if(voiceRunning&&voiceChannel===ch){voiceStoppingForSend=true;voiceRunning=false;try{recognition.stop()}catch(_){finalSubmit(ch)}}else finalSubmit(ch)}
+finalSubmit=async function(ch){const text=(voiceBuffers[ch]||'').trim();if(!text){toast('Сначала запишите голосовой ответ.');return}setVoiceUI(ch,'Ответ отправлен',false);if(aiReady())await evaluateWithAI(ch,text);else{if(ch==='speak')evaluateSpeak(text);if(ch==='pitch')scorePitchText(text);if(ch==='sim')evaluateSim(text)}}
+resetSim=function(){state.simStep=0;state.messages=[];state.aiHistory=[];voiceBuffers.sim='';save();renderInvestor()}
+
+
+// Production Accelerated Coach v6: persistent 1/3/6-hour learning sessions.
+state.accel=Object.assign({active:false,targetMin:360,startedAt:0,pausedAt:0,totalPauseMs:0,blockIndex:0,completedBlocks:0,voiceCues:true},state.accel||{});
+let accelTicker=null,accelWakeLock=null,lastAnnouncedBlock=-1;
+const ACCEL_BLOCK_MIN=20,ACCEL_BREAK_MIN=5;
+const ACCEL_TASKS=[
+  {view:'train',title:'Active Recall',desc:'Повторяйте слабые и просроченные термины. Не подсматривайте до ответа.',cue:'Блок повторения. Достаньте ответы из памяти, а не перечитывайте.'},
+  {view:'learn',title:'Новые связи',desc:'Изучите до 5 новых терминов и сразу свяжите каждый со своим проектом.',cue:'Блок новых связей. Пять терминов максимум, каждый привяжите к своему бизнесу.'},
+  {view:'speak',title:'Объяснение голосом',desc:'Объясняйте термин без подсказки и приводите собственный пример.',cue:'Голосовой блок. Объясните термин своими словами и приведите пример.'},
+  {view:'investor',title:'AI-инвестор',desc:'Ответьте на несколько вопросов инвестора голосом. Цель — точность, цифры и причинность.',cue:'Блок инвестора. Отвечайте коротко, конкретно и цифрами.'},
+  {view:'pitch',title:'Pitch',desc:'Расскажите проект одним заходом: проблема → решение → рынок → traction → ask.',cue:'Блок питча. Один цельный рассказ без чтения подсказок.'},
+  {view:'train',title:'Смешанная проверка',desc:'Вернитесь к тестам: interleaving заставляет мозг различать похожие понятия.',cue:'Смешанная проверка. Сейчас важна не скорость, а точное различение понятий.'}
+];
+function accelElapsedMs(){const a=state.accel;if(!a.startedAt)return 0;const end=a.pausedAt||Date.now();return Math.max(0,end-a.startedAt-(a.totalPauseMs||0))}
+function accelTargetMs(){return (state.accel.targetMin||360)*60000}
+function accelRemainingMs(){return Math.max(0,accelTargetMs()-accelElapsedMs())}
+function formatDuration(ms){const total=Math.max(0,Math.floor(ms/1000)),h=Math.floor(total/3600),m=Math.floor((total%3600)/60),sec=total%60;return h?`${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`:`${m}:${String(sec).padStart(2,'0')}`}
+function accelCyclePosition(){const work=ACCEL_BLOCK_MIN*60000,br=ACCEL_BREAK_MIN*60000,cycle=work+br,pos=accelElapsedMs()%cycle;return {isBreak:pos>=work,remaining:(pos>=work?cycle:work)-pos}}
+function accelTask(){const workBlocks=Math.floor(accelElapsedMs()/((ACCEL_BLOCK_MIN+ACCEL_BREAK_MIN)*60000));return ACCEL_TASKS[workBlocks%ACCEL_TASKS.length]}
+function accelProgress(){return Math.min(100,Math.round(accelElapsedMs()/Math.max(1,accelTargetMs())*100))}
+function accelIsPaused(){return !!state.accel.pausedAt}
+function accelStatusText(){if(!state.accel.active)return 'Не запущен';if(accelIsPaused())return 'Пауза';return accelCyclePosition().isBreak?'Восстановление':'Обучение'}
+async function requestWakeLock(){if(!state.accel.active||accelIsPaused()||!('wakeLock' in navigator))return;try{if(!accelWakeLock)accelWakeLock=await navigator.wakeLock.request('screen');accelWakeLock.addEventListener?.('release',()=>{accelWakeLock=null})}catch(_){accelWakeLock=null}}
+async function releaseWakeLock(){try{await accelWakeLock?.release()}catch(_){}accelWakeLock=null}
+function speakCoach(text){if(!state.accel.voiceCues||!('speechSynthesis' in window)||!text)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang='ru-RU';u.rate=.96;speechSynthesis.speak(u)}catch(_){}}
+function vibrateCoach(){try{navigator.vibrate?.([80,60,80])}catch(_){}}
+function setAccelTarget(min){if(state.accel.active){toast('Сначала завершите текущую сессию.');return}state.accel.targetMin=min;save();refreshAccelUI()}
+async function startAccel(min=state.accel.targetMin||360){state.accel={...state.accel,active:true,targetMin:min,startedAt:Date.now(),pausedAt:0,totalPauseMs:0,blockIndex:0,completedBlocks:0};save();lastAnnouncedBlock=-1;await requestWakeLock();speakCoach(`Ускоренный коуч запущен на ${min===60?'один час':min===180?'три часа':'шесть часов'}. Первый блок — active recall.`);startAccelTicker();refreshAccelUI();toast('Ускоренный коуч запущен')}
+async function pauseAccel(){if(!state.accel.active)return;if(accelIsPaused()){const now=Date.now();state.accel.totalPauseMs=(state.accel.totalPauseMs||0)+(now-state.accel.pausedAt);state.accel.pausedAt=0;save();await requestWakeLock();speakCoach('Продолжаем интенсивную сессию.')}else{state.accel.pausedAt=Date.now();save();await releaseWakeLock();speakCoach('Сессия поставлена на паузу.')}refreshAccelUI()}
+async function stopAccel(completed=false){if(!state.accel.active)return;state.accel.active=false;state.accel.pausedAt=0;save();await releaseWakeLock();clearInterval(accelTicker);accelTicker=null;speakCoach(completed?'Сессия завершена. Зафиксируйте три главных вывода из памяти.':'Сессия завершена.');refreshAccelUI();toast(completed?'Интенсив завершён':'Сессия остановлена')}
+function toggleAccelVoice(){state.accel.voiceCues=!state.accel.voiceCues;save();if(state.accel.voiceCues)speakCoach('Голосовые подсказки включены.');refreshAccelUI()}
+function openAccelTask(){const pos=accelCyclePosition();if(pos.isBreak){toast('Сейчас короткое восстановление. Можно продолжить раньше.');return}go(accelTask().view)}
+function accelBlockNumber(){return Math.floor(accelElapsedMs()/((ACCEL_BLOCK_MIN+ACCEL_BREAK_MIN)*60000))+1}
+function maybeAdvanceAccel(){if(!state.accel.active||accelIsPaused())return;if(accelRemainingMs()<=0){stopAccel(true);return}const pos=accelCyclePosition(),block=accelBlockNumber()*2+(pos.isBreak?1:0);if(block!==lastAnnouncedBlock){lastAnnouncedBlock=block;vibrateCoach();if(pos.isBreak)speakCoach('Пять минут восстановления. Встаньте, выпейте воды и не листайте ленту.');else speakCoach(accelTask().cue)}}
+function accelCoachHtml(){const a=state.accel,pos=a.active?accelCyclePosition():{isBreak:false,remaining:ACCEL_BLOCK_MIN*60000},task=accelTask(),progress=accelProgress();return `<div class="card accel-coach ${a.active?'running':''}"><div class="row between accel-head"><div><span class="tag">УСКОРЕННОЕ ОБУЧЕНИЕ</span><h2>Коуч на 1–6 часов</h2><p class="muted">Интенсив чередует извлечение из памяти, новые связи, голос, AI-инвестора и pitch. Каждые ${ACCEL_BLOCK_MIN} минут — ${ACCEL_BREAK_MIN} минут восстановления, чтобы не превращать часы в пассивное чтение.</p></div><div class="accel-clock"><strong>${a.active?formatDuration(accelRemainingMs()):formatDuration(accelTargetMs())}</strong><small>${a.active?'осталось':'план'}</small></div></div><div class="accel-targets">${[[60,'1 час'],[180,'3 часа'],[360,'6 часов']].map(([m,l])=>`<button class="${a.targetMin===m?'active':''}" onclick="setAccelTarget(${m})" ${a.active?'disabled':''}>${l}</button>`).join('')}</div>${a.active?`<div class="accel-live"><div class="row between"><strong>${accelStatusText()} · блок ${accelBlockNumber()}</strong><span>${progress}% сессии</span></div><div class="progress"><div style="width:${progress}%"></div></div><div class="accel-task"><span>${pos.isBreak?'☕':'⚡'}</span><div><strong>${pos.isBreak?'Восстановление':safe(task.title)}</strong><p>${pos.isBreak?'Пять минут: вода, движение, взгляд вдаль. Не загружайте мозг новым контентом.':safe(task.desc)}</p><small>До смены блока: ${formatDuration(pos.remaining)}</small></div></div><div class="row accel-actions"><button class="btn" onclick="openAccelTask()" ${pos.isBreak?'disabled':''}>${pos.isBreak?'Идёт пауза':'Открыть текущий блок'}</button><button class="btn secondary" onclick="pauseAccel()">${accelIsPaused()?'Продолжить':'Пауза'}</button><button class="btn secondary" onclick="toggleAccelVoice()">${a.voiceCues?'🔊 Подсказки':'🔇 Подсказки'}</button><button class="btn secondary danger-lite" onclick="stopAccel(false)">Завершить</button></div></div>`:`<div class="accel-preview"><strong>Что произойдёт после старта</strong><p class="muted">Коуч ведёт по циклу, таймер переживает перезапуск PWA, а на поддерживаемых устройствах удерживает экран активным. Можно параллельно работать: приложение подаст голосовой сигнал при смене блока.</p><button class="btn accel-start" onclick="startAccel(${a.targetMin||360})">⚡ Запустить ускоренный коуч</button></div>`}</div>`}
+function refreshAccelUI(){document.querySelectorAll('[data-accel-slot]').forEach(el=>el.innerHTML=accelCoachHtml());if(state.accel.active&&!accelIsPaused())requestWakeLock()}
+function startAccelTicker(){clearInterval(accelTicker);if(!state.accel.active)return;accelTicker=setInterval(()=>{maybeAdvanceAccel();refreshAccelUI()},1000);maybeAdvanceAccel()}
+
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state.accel.active&&!accelIsPaused())requestWakeLock()});
+
+// Make installation an explicit website CTA while preserving the standard PWA prompt and iOS instructions.
+function installCtaHtml(){return `<div class="card install-cta"><div><span class="tag">PWA ДЛЯ ТЕЛЕФОНА</span><h2>Investor Coach как приложение</h2><p class="muted">Установите сайт на телефон: отдельная иконка, standalone-режим и офлайн-доступ к основным материалам.</p></div><button class="btn install-download" onclick="installApp()">⬇ Скачать приложение</button></div>`}
+const _renderDashboardV6=renderDashboard;
+renderDashboard=function(){_renderDashboardV6();const root=document.querySelector('#view-dashboard');if(root){const top=document.createElement('div');top.className='v6-dashboard-top';top.innerHTML=installCtaHtml()+`<div data-accel-slot>${accelCoachHtml()}</div>`;root.prepend(top)}setInstallState()}
+const _renderRoadmapV6=renderRoadmap;
+renderRoadmap=function(){_renderRoadmapV6();const root=document.querySelector('#view-roadmap');if(root){const slot=document.createElement('div');slot.setAttribute('data-accel-slot','');slot.innerHTML=accelCoachHtml();root.prepend(slot)}}
+const _setInstallStateV6=setInstallState;
+setInstallState=function(){_setInstallStateV6();document.querySelectorAll('.install-download').forEach(b=>{if(isStandalone()){b.textContent='✓ Приложение установлено';b.disabled=true}else{b.textContent='⬇ Скачать приложение';b.disabled=false}})}
+
+if(state.accel.active){if(state.accel.pausedAt&&state.accel.pausedAt<state.accel.startedAt)state.accel.pausedAt=0;startAccelTicker()}
+
 renderAll();
-
-// PWA: установка, состояние standalone и обновление Service Worker.
-let deferredInstallPrompt=null;
-const isStandalone=()=>window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone===true;
-const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent);
-function setInstallState(){
- const button=$("#installApp"); const text=$("#installState");
- if(!button||!text)return;
- if(isStandalone()){
-  button.hidden=true; text.hidden=false; text.textContent="Приложение установлено"; return;
- }
- text.hidden=true; button.hidden=false;
- button.textContent="Установить приложение";
-}
-window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredInstallPrompt=e;setInstallState();});
-window.addEventListener("appinstalled",()=>{deferredInstallPrompt=null;setInstallState();toast("Приложение установлено.");});
-async function installApp(){
- if(isStandalone()){setInstallState();return;}
- if(deferredInstallPrompt){
-  deferredInstallPrompt.prompt();
-  await deferredInstallPrompt.userChoice;
-  deferredInstallPrompt=null;setInstallState();return;
- }
- openInstallHelp();
-}
-function openInstallHelp(){
- const modal=$("#installModal");
- const body=$("#installHelpText");
- if(isIOS()) body.innerHTML='<strong>iPhone / iPad:</strong><br>1. Откройте сайт в Safari.<br>2. Нажмите <strong>«Поделиться»</strong>.<br>3. Выберите <strong>«На экран „Домой“»</strong>.<br>4. Подтвердите добавление.';
- else body.innerHTML='<strong>Android:</strong><br>Откройте меню браузера и выберите <strong>«Установить приложение»</strong> или <strong>«Добавить на главный экран»</strong>. В Chrome автоматическое окно установки появляется после выполнения критериев PWA.';
- modal.hidden=false;document.body.classList.add("modal-open");
-}
-function closeInstallHelp(){$("#installModal").hidden=true;document.body.classList.remove("modal-open");}
-$("#installApp").addEventListener("click",installApp);
-$("#installClose").addEventListener("click",closeInstallHelp);
-$("#installModal").addEventListener("click",e=>{if(e.target.id==="installModal")closeInstallHelp();});
-setInstallState();
-
-if("serviceWorker" in navigator){
- window.addEventListener("load",async()=>{
-  try{
-   const registration=await navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"});
-   await registration.update();
-   let refreshing=false;
-   navigator.serviceWorker.addEventListener("controllerchange",()=>{
-    if(refreshing)return; refreshing=true; window.location.reload();
-   });
-   registration.addEventListener("updatefound",()=>{
-    const worker=registration.installing;
-    if(!worker)return;
-    worker.addEventListener("statechange",()=>{
-     if(worker.state==="installed"&&navigator.serviceWorker.controller){
-      worker.postMessage({type:"SKIP_WAITING"});
-     }
-    });
-   });
-  }catch(err){console.error("Service Worker не зарегистрирован:",err);}
- });
-}
