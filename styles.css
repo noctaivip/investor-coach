@@ -56,3 +56,21 @@ textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:
 /* Accelerated Coach + prominent install CTA v6 */
 .v6-dashboard-top{display:grid;gap:16px;margin-bottom:18px}.install-cta{display:flex;align-items:center;justify-content:space-between;gap:22px;background:linear-gradient(135deg,#fff 0%,#f5f4ff 100%);border:1px solid rgba(91,92,240,.22)}.install-cta h2{margin:7px 0 5px}.install-cta p{margin:0;max-width:720px}.install-download{min-width:220px;min-height:52px;font-size:15px}.install-download:disabled{opacity:.68;cursor:default}.accel-coach{overflow:hidden}.accel-coach.running{border-color:rgba(91,92,240,.35);box-shadow:0 16px 42px rgba(91,92,240,.08)}.accel-head{align-items:flex-start;gap:18px}.accel-head h2{margin:7px 0}.accel-head p{max-width:780px;line-height:1.55}.accel-clock{flex:0 0 auto;min-width:118px;text-align:center;padding:13px 15px;border-radius:16px;background:#101828;color:#fff}.accel-clock strong{display:block;font-size:24px;font-variant-numeric:tabular-nums}.accel-clock small{display:block;margin-top:3px;color:#cfd4dc}.accel-targets{display:flex;gap:8px;margin:18px 0 14px}.accel-targets button{border:1px solid var(--border);background:#fff;border-radius:12px;min-height:44px;padding:9px 16px;font-weight:800;cursor:pointer}.accel-targets button.active{background:var(--primary);border-color:var(--primary);color:#fff}.accel-targets button:disabled{cursor:not-allowed;opacity:.72}.accel-live{padding-top:4px}.accel-live>.row{font-size:13px}.accel-task{display:grid;grid-template-columns:42px 1fr;gap:12px;align-items:start;margin:16px 0;padding:16px;border-radius:16px;background:#f8faff;border:1px solid var(--border)}.accel-task>span{font-size:28px}.accel-task p{margin:5px 0;color:var(--muted);line-height:1.5}.accel-task small{color:var(--muted);font-variant-numeric:tabular-nums}.accel-actions{flex-wrap:wrap}.danger-lite{color:#b42318}.accel-preview{margin-top:12px;padding:16px;border-radius:16px;background:#f8faff}.accel-preview p{line-height:1.55}.accel-start{margin-top:4px;min-height:50px}.accel-coach .progress{margin-top:8px}
 @media(max-width:720px){.install-cta{align-items:stretch;flex-direction:column}.install-download{width:100%;min-width:0}.accel-head{flex-direction:column}.accel-clock{width:100%;display:flex;justify-content:space-between;align-items:center;text-align:left}.accel-clock small{margin:0}.accel-targets{display:grid;grid-template-columns:repeat(3,1fr)}.accel-targets button{padding:8px}.accel-actions{display:grid;grid-template-columns:1fr 1fr}.accel-actions .btn{width:100%}.accel-task{grid-template-columns:36px 1fr}.accel-task>span{font-size:24px}}
+
+
+/* v7: silent accelerated coach, controls directly under the timer */
+.accel-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(330px,430px);align-items:start;gap:22px}
+.accel-clock{width:100%;min-width:0;text-align:left;padding:18px;border-radius:18px}
+.accel-clock strong{font-size:32px;line-height:1.1}
+.accel-clock small{margin-top:5px}
+.accel-controls-under-clock{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.accel-controls-under-clock .btn{width:100%;min-height:42px;padding:9px 10px;font-size:12px}
+.accel-controls-under-clock .btn:nth-child(3),.accel-controls-under-clock .btn:nth-child(5){grid-column:1/-1}
+.accel-controls-under-clock .btn:disabled{opacity:.42;cursor:not-allowed}
+@media(max-width:720px){
+ .accel-head{grid-template-columns:1fr}
+ .accel-clock{display:block;text-align:left}
+ .accel-clock strong{font-size:30px}
+ .accel-controls-under-clock{grid-template-columns:1fr 1fr}
+ .accel-controls-under-clock .btn{font-size:12px}
+}
