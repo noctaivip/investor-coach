@@ -85,3 +85,10 @@ textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:
 .nav-item[data-view="coach"].active{background:#4338ca;color:#fff;border-color:#5b5cf0}
 .coach-back{margin-bottom:10px}.coach-plan-tabs{margin:16px 0 12px}
 @media(max-width:720px){.coach-back{min-height:44px;padding:9px 14px}.coach-plan-tabs{margin-right:0;padding-right:0}}
+
+/* v8.4 corporate pilot: measurable learning outcomes */
+.field-label{display:grid;gap:6px;margin:12px 0;font-size:12px;font-weight:800;color:var(--muted)}
+.enterprise-score{font-size:52px;font-weight:900;line-height:1;margin:14px 0 8px;color:var(--accent)}
+.enterprise-competencies .progress{margin:12px 0 7px}.enterprise-assessments{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.enterprise-assessment-empty,.enterprise-assessment-result,.enterprise-improvement{min-height:94px;padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--surface2);display:flex;flex-direction:column;justify-content:center;gap:5px}.enterprise-assessment-result span,.enterprise-improvement strong{font-size:25px;font-weight:900}.enterprise-assessment-result small,.enterprise-assessment-empty span,.enterprise-improvement span{color:var(--muted);font-size:12px}.enterprise-actions{flex-wrap:wrap}
+@media(max-width:720px){.enterprise-assessments{grid-template-columns:1fr}.enterprise-actions{display:grid;grid-template-columns:1fr}.enterprise-actions .btn{width:100%}.enterprise-score{font-size:44px}}
