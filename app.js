@@ -79,11 +79,11 @@ function coachDay(){const p=coachPlan();return Math.max(1,Math.min(p.days,Number
 function setCoachPlan(id){if(!COACH_PLANS[id])return;state.coachPlan=id;if(!state.coachPlanDays[id])state.coachPlanDays[id]=1;coachSession=null;save();renderCoach();renderDashboard();pushAppHistory("coach",{coachSession:false})}
 function termUse(t){const map={"Фандрайзинг":"Раунды, переговоры с инвесторами и условия сделки.","Финансы":"Финансовая модель, бюджет и экономика бизнеса.","Метрики":"Отчёты, рост продукта и вопросы инвестора о цифрах.","Рынок":"Оценка рынка, клиентов и конкурентов.","Рост":"Продажи, маркетинг и масштабирование.","Бизнес":"Бизнес-модель, продукт и монетизация.","Коммуникация":"Pitch, встречи и ответы инвестору.","Право":"Документы, права инвесторов и структура компании."};return map[t?.cat]||"В разговоре с инвестором и управлении стартапом."}
 function coachGuide(t){const g=COACH_GUIDES[t.id]||{},goals={"Метрики":"Понять качество роста через цифры, а не впечатления.","Финансы":"Понять устойчивость экономики и потребность в капитале.","Рынок":"Понять кому нужен продукт и насколько велик рынок.","Рост":"Понять, можно ли повторяемо привлекать клиентов.","Фандрайзинг":"Понять экономику раунда, ownership и риски условий.","Право":"Понять контроль, права сторон и юридические риски.","Бизнес":"Понять как продукт создаёт ценность и выручку.","Коммуникация":"Понять, может ли основатель ясно объяснить бизнес."};let benchmark=g.benchmark;if(!benchmark)benchmark=(t.cat==="Метрики"||t.cat==="Финансы")?"Универсального проходного числа нет. Важно точное определение, период, динамика, сегмент и связь с соседними метриками.":"Универсального числового порога нет. Сильный ответ конкретный и подтверждён данными, примером или документом.";return {purpose:t.why||`Термин нужен, чтобы точно говорить о ${termUse(t).toLowerCase()}`,investorGoal:g.investorGoal||goals[t.cat]||"Понять конкретный риск или качество бизнеса.",benchmark,best:g.best||"Ответьте одним тезисом и подтвердите его цифрой, примером или документом.",use:termUse(t)}}
-function coachStat(id){if(!state.coachStats[id])state.coachStats[id]={seen:0,right:0,wrong:0,streak:0,last:""};return state.coachStats[id]}
+function coachStat(id){if(!state.coachStats[id])state.coachStats[id]={seen:0,right:0,wrong:0,streak:0,last:"",mastery:0,nextReview:0};const s=state.coachStats[id];s.mastery=Number(s.mastery||0);s.nextReview=Number(s.nextReview||0);return s}
 function coachAccuracy(id){const s=coachStat(id),n=(s.right||0)+(s.wrong||0);return n?s.right/n:0}
 function coachLevel(id){const s=coachStat(id),a=coachAccuracy(id);if(s.seen<2||a<.55)return 1;if(s.seen<5||a<.82)return 2;return 3}
 function coachLevelName(id){return ["","Разбираем с нуля","Закрепляем на примерах","Тренируем как на встрече"][coachLevel(id)]}
-function coachPriority(t){const s=coachStat(t.id),a=coachAccuracy(t.id),weak=state.weak.includes(t.id)?8:0,due=(state.srs[t.id]&&state.srs[t.id].due<=today())?7:0,unseen=s.seen===0?12:0,recent=state.coachRecent.includes(t.id)?18:0;return unseen+weak+due+(s.wrong||0)*2+(s.seen?Math.round((1-a)*8):0)-Math.min(5,s.right||0)-recent}
+function coachPriority(t){const s=coachStat(t.id),a=coachAccuracy(t.id),weak=state.weak.includes(t.id)?8:0,due=(state.srs[t.id]&&state.srs[t.id].due<=today())?7:0,unseen=s.seen===0?14:0,recent=state.coachRecent.includes(t.id)?22:0,review=s.nextReview&&Date.now()>=s.nextReview?9:0;return unseen+weak+due+review+(s.wrong||0)*2+(s.seen?Math.round((1-a)*8):0)-Math.min(10,Math.round((s.mastery||0)/10))-recent}
 function coachFocusTerms(){const p=coachPlan(),d=coachDay();if(state.coachPlan==="7")return (COACH_WEEK[(d-1)%7]||[]).map(term).filter(Boolean);const start=((d-1)*p.newPerDay)%TERMS.length,out=[];for(let i=0;i<Math.min(p.newPerDay,TERMS.length);i++)out.push(TERMS[(start+i)%TERMS.length]);return out}
 function coachPool(){const preferred=[...dueTerms(),...state.weak.map(term).filter(Boolean),...coachFocusTerms()].filter(Boolean),seen=new Set(),out=[];const add=t=>{if(t&&!seen.has(t.id)){seen.add(t.id);out.push(t)}};for(const t of preferred.sort((a,b)=>coachPriority(b)-coachPriority(a)))if(!state.coachRecent.includes(t.id))add(t);for(const t of TERMS.slice().sort((a,b)=>coachPriority(b)-coachPriority(a)))if(!state.coachRecent.includes(t.id))add(t);for(const t of preferred.sort((a,b)=>coachPriority(b)-coachPriority(a)))add(t);for(const t of TERMS.slice().sort((a,b)=>coachPriority(b)-coachPriority(a)))add(t);return out}
 function coachDecoys(correct,count=2){const same=TERMS.filter(t=>t.id!==correct.id&&t.cat===correct.cat),pool=[...same,...TERMS.filter(t=>t.id!==correct.id&&!same.some(x=>x.id===t.id))],out=[];for(const t of pool){if(out.length>=count)break;if(!out.some(x=>x.id===t.id))out.push(t)}return out}
@@ -98,10 +98,11 @@ function buildCoachTasks(t){const g=coachGuide(t),level=coachLevel(t.id),dec=coa
  const purpose=coachShuffle([g.investorGoal,coachGuide(dec[0]).investorGoal,coachGuide(dec[1]).investorGoal]);tasks.push(coachOptionTask("investor",t,`Инвестор спрашивает: «${t.investor||`Что показывает ${t.word}?`}» Что он пытается понять?`,purpose,purpose.indexOf(g.investorGoal)));
  if(level>=2){const usage=coachShuffle([g.use,coachGuide(dec[0]).use,coachGuide(dec[1]).use]);tasks.push(coachOptionTask("usage",t,`Где «${t.word}» используется наиболее уместно?`,usage,usage.indexOf(g.use)))}
  const responses=coachShuffle([g.best,coachGuide(dec[0]).best,coachGuide(dec[1]).best]);tasks.push(coachOptionTask("response",t,`Какой ответ на вопрос про «${t.word}» звучит профессиональнее?`,responses,responses.indexOf(g.best)));
+ if(level>=2)tasks.push({type:"transfer",termId:t.id,prompt:`Сформулируйте своими словами, как вы примените «${t.word}» в разговоре с инвестором. Привяжите ответ к цифре, факту или решению.`,answered:false});
  tasks.push({type:"speech",termId:t.id,prompt:`Ответьте голосом 20–40 секунд. Инвестор спрашивает: «${t.investor||`Объясните ${t.word} применительно к вашему бизнесу.`}»`,answered:false,score:null,feedback:""});
  return tasks}
 function startCoach(count=2){const chosen=coachPool().slice(0,Math.max(1,Math.min(2,count))),groups=chosen.map(buildCoachTasks),tasks=[],max=Math.max(...groups.map(g=>g.length));for(let step=0;step<max;step++)for(const group of groups)if(group[step])tasks.push(group[step]);coachSession={count:chosen.length,index:0,tasks,terms:chosen.map(t=>t.id),plan:state.coachPlan,day:coachDay(),answered:0,correct:0,mistakes:[]};state.coachRecent=[...state.coachRecent,...chosen.map(t=>t.id)].slice(-12);voiceBuffers.coach="";save();renderCoach();pushAppHistory("coach",{coachSession:true,coachIndex:0})}
-function coachRecordResult(task,ok){const s=coachStat(task.termId);s.seen=(s.seen||0)+1;s.last=today();coachSession.answered=(coachSession.answered||0)+1;if(ok){s.right=(s.right||0)+1;s.streak=(s.streak||0)+1;coachSession.correct=(coachSession.correct||0)+1}else{s.wrong=(s.wrong||0)+1;s.streak=0;if(!coachSession.mistakes.includes(task.termId))coachSession.mistakes.push(task.termId)}updateSRS(task.termId,ok)}
+function coachRecordResult(task,ok){const s=coachStat(task.termId);s.seen=(s.seen||0)+1;s.last=today();coachSession.answered=(coachSession.answered||0)+1;if(ok){s.right=(s.right||0)+1;s.streak=(s.streak||0)+1;s.mastery=Math.min(100,(s.mastery||0)+8);s.nextReview=Date.now()+((s.mastery||0)>=70?3:1)*86400000;coachSession.correct=(coachSession.correct||0)+1}else{s.wrong=(s.wrong||0)+1;s.streak=0;s.mastery=Math.max(0,(s.mastery||0)-6);s.nextReview=Date.now()+20*60000;if(!coachSession.mistakes.includes(task.termId))coachSession.mistakes.push(task.termId)}updateSRS(task.termId,ok)}
 function coachAnswer(i){const task=coachSession?.tasks?.[coachSession.index];if(!task||["lesson","speech"].includes(task.type)||task.answered)return;task.selected=i;task.answered=true;coachRecordResult(task,i===task.answer);save();renderCoach();renderDashboard()}
 function coachNext(){if(!coachSession)return;const task=coachSession.tasks[coachSession.index];if(task.type!=="lesson"&&!task.answered)return;if(task.type==="lesson"){const s=coachStat(task.termId);s.seen=(s.seen||0)+1;s.last=today();save()}coachSession.index++;voiceBuffers.coach="";renderCoach();pushAppHistory("coach",{coachSession:true,coachIndex:coachSession.index})}
 function coachBack(){if(history.state?.view==='coach'&&window.history.length>1){history.back();return}if(coachSession&&coachSession.index>0){coachSession.index--;voiceBuffers.coach="";renderCoach()}else{coachSession=null;renderCoach()}}
@@ -111,10 +112,12 @@ function coachTaskComment(task,t){const g=coachGuide(t);if(task.type==="meaning"
 function coachFeedback(task,t){const ok=task.selected===task.answer;return `<div class="answer-result ${ok?'is-correct':'is-wrong'}"><strong>${ok?'Правильно':'Неправильно'}</strong></div>${!ok?`<div class="answer-line wrong-line"><span>Ваш ответ</span><strong>${safe(task.options[task.selected])}</strong></div>`:''}<div class="answer-line correct-line"><span>Правильный ответ</span><strong>${safe(task.options[task.answer])}</strong></div><div class="feedback lesson-feedback"><p><strong>Комментарий:</strong> ${safe(coachTaskComment(task,t))}</p></div>`}
 function coachPlanTabs(){return `<div class="filterbar coach-plan-tabs">${Object.entries(COACH_PLANS).map(([id,p])=>`<button class="${state.coachPlan===id?'active':''}" onclick="setCoachPlan('${id}')">${p.label}</button>`).join('')}</div>`}
 function coachBackButton(){return `<button class="btn secondary coach-back" onclick="coachBack()">← Назад</button>`}
+function coachTransferDone(){if(!coachSession)return;const task=coachSession.tasks?.[coachSession.index];if(!task||task.type!=="transfer"||task.answered)return;task.answered=true;const s=coachStat(task.termId);s.seen=(s.seen||0)+1;s.mastery=Math.min(100,(s.mastery||0)+4);s.nextReview=Date.now()+2*86400000;s.last=today();save();renderCoach()}
 function renderCoach(){const root=$("#view-coach");if(!root)return;const p=coachPlan(),d=coachDay();if(!coachSession){const focus=coachFocusTerms().slice(0,6).map(t=>t.word).join(" · "),weak=TERMS.filter(t=>state.weak.includes(t.id)).length;root.innerHTML=`<div class="card"><div class="row between"><div><span class="tag">ГЛАВНЫЙ РЕЖИМ</span><h2>Coach</h2><p class="muted">Понимание → ситуация → логика инвестора → сильный ответ → живая речь.</p></div><div class="score-ring" style="--score:${mastery()}"><span>${mastery()}%</span></div></div>${coachPlanTabs()}<div class="grid grid-2"><div><strong>${p.title}</strong><p class="muted">${p.desc}</p><small>${p.pace} · день ${d} из ${p.days}</small></div><div><strong>Сегодня</strong><p class="muted">${focus||"Адаптивный набор терминов"}</p><small>Слабых тем: ${weak}</small></div></div><div class="row"><button class="btn" onclick="startCoach(1)">Начать 1 термин</button><button class="btn" onclick="startCoach(2)">Начать 2 термина</button></div><p class="muted small">Coach не повторяет один и тот же разбор подряд. Ошибки возвращаются позже и в другом контексте.</p></div>`;return}
  if(coachSession.index>=coachSession.tasks.length){const score=pct(coachSession.correct,coachSession.answered),names=coachSession.terms.map(id=>term(id)?.word).filter(Boolean).join(" · ");root.innerHTML=`<div class="card"><span class="tag">ПОДХОД ЗАВЕРШЁН</span><h2>${score}%</h2><p><strong>${safe(names)}</strong></p><p class="muted">Следующий подход даст другие термины. Ошибки вернутся позже по интервальному повторению, а не на соседнем экране.</p><div class="row">${coachBackButton()}<button class="btn" onclick="coachSession=null;renderCoach()">Новый подход</button><button class="btn secondary" onclick="coachNextDay()">Следующий день</button></div></div>`;return}
  const task=coachSession.tasks[coachSession.index],t=term(task.termId),g=coachGuide(t),n=coachSession.index+1,total=coachSession.tasks.length,level=coachLevelName(t.id);
  if(task.type==="lesson"){root.innerHTML=`<div class="quiz"><div class="row between">${coachBackButton()}<span class="tag">COACH · ${n}/${total}</span></div><div class="card quiz-card"><div class="row between"><div><span class="tag">${safe(t.cat)}</span><h2>${safe(t.word)}</h2></div><span class="muted small">${safe(level)}</span></div><p class="definition"><strong>Просто:</strong> ${safe(t.simple)}</p><p><strong>Зачем это нужно:</strong> ${safe(g.purpose)}</p><p><strong>Пример:</strong> ${safe(t.example||"Пример зависит от бизнеса.")}</p><p><strong>Что хочет понять инвестор:</strong> ${safe(g.investorGoal)}</p>${t.formula?`<p><strong>Формула:</strong> ${safe(t.formula)}</p>`:""}<button class="btn feedback-next" onclick="coachNext()">Проверить на практике</button></div></div>`;return}
+ if(task.type==="transfer"){root.innerHTML=`<div class="quiz"><div class="row between">${coachBackButton()}<span class="tag">COACH · ${n}/${total}</span></div><div class="card quiz-card"><span class="tag">ПЕРЕНОС ЗНАНИЯ</span><h2>${safe(task.prompt)}</h2><p class="muted">Не повторяйте определение. Скажите это так, как сказали бы на реальной встрече.</p>${task.answered?`<div class="feedback"><strong>Готово.</strong><p>Вы связали термин со своей собственной формулировкой.</p></div><button class="btn feedback-next" onclick="coachNext()">Следующий шаг</button>`:`<button class="btn" onclick="coachTransferDone()">Я сформулировал ответ</button>`}</div></div>`;return}
  if(task.type==="speech"){root.innerHTML=`<div class="quiz"><div class="row between">${coachBackButton()}<span class="tag">COACH · ${n}/${total}</span></div><div class="card quiz-card"><span class="tag">ЖИВАЯ РЕЧЬ</span><h2>${safe(task.prompt)}</h2><p class="muted">Не читайте определение. Ответьте как на встрече: коротко, своими словами, с одним конкретным примером или цифрой.</p>${voicePanel('coach')}<div id="coachSpeechResult">${task.feedback||""}</div>${task.answered?`<button class="btn feedback-next" onclick="coachNext()">Следующий шаг</button>`:""}</div></div>`;restoreVoiceTranscript('coach');return}
  const labels={meaning:"Смысл",scenario:"Применение",investor:"Логика инвестора",usage:"Где употребляется",response:"Ответ на встрече"};root.innerHTML=`<div class="quiz"><div class="row between">${coachBackButton()}<span class="muted small">${safe(level)}</span></div><div class="row between"><span class="tag">COACH · ${n}/${total}</span><span class="muted small">${labels[task.type]||"Практика"}</span></div><div class="card quiz-card"><h2>${safe(task.prompt)}</h2><div>${task.options.map((o,i)=>`<button class="option ${task.answered?(i===task.answer?'correct':i===task.selected?'wrong':''):''}" ${task.answered?'disabled':''} onclick="coachAnswer(${i})">${safe(o)}</button>`).join("")}</div>${task.answered?`${coachFeedback(task,t)}<button class="btn feedback-next" onclick="coachNext()">Следующий шаг</button>`:""}</div></div>`}
 
@@ -293,3 +296,172 @@ if(state.accel.active){if(state.accel.pausedAt&&state.accel.pausedAt<state.accel
 
 renderAll();
 
+
+
+/* ===== Professional Learning Engine v11 ===== */
+state.skillProfile=state.skillProfile||{};
+state.termSpeech=state.termSpeech||{};
+state.simScenario=state.simScenario||"first_meeting";
+state.simSession=Object.assign({active:false,turn:0,maxTurns:6,complete:false,scores:[],summary:"",lastFeedback:""},state.simSession||{});
+
+const PROFESSIONAL_SKILLS={
+ directness:"Прямой ответ",
+ clarity:"Ясность",
+ evidence:"Доказательность",
+ metrics:"Цифры",
+ terminology:"Терминология",
+ risk_handling:"Работа с риском",
+ structure:"Структура"
+};
+const INVESTOR_SCENARIOS={
+ first_meeting:{title:"Первая встреча",desc:"Проверка инвестиционной истории: проблема, рынок, traction, экономика и команда.",opening:"Расскажите о компании за одну минуту: для кого вы работаете, какую проблему решаете и какое у вас главное доказательство спроса?"},
+ investment_committee:{title:"Инвесткомитет",desc:"Жёсткая проверка допущений, экономики, конкуренции, рисков и использования капитала.",opening:"Начнём с главного риска. Какое допущение в вашей модели сейчас самое опасное и какими данными вы его проверяете?"},
+ due_diligence:{title:"Due diligence",desc:"Проверка качества метрик и непротиворечивости фактов перед сделкой.",opening:"Назовите три метрики, на которые вы опираетесь при доказательстве качества бизнеса, и объясните, как именно они рассчитаны."}
+};
+
+function skillEntry(id){if(!state.skillProfile[id])state.skillProfile[id]={score:0,samples:0};return state.skillProfile[id]}
+function updateSkillProfile(dimensions){
+ if(!dimensions||typeof dimensions!=="object")return;
+ Object.keys(PROFESSIONAL_SKILLS).forEach(id=>{
+  const v=Number(dimensions[id]);if(!Number.isFinite(v))return;
+  const s=skillEntry(id),n=Math.min(12,s.samples||0),old=Number(s.score||0);
+  s.score=Math.round((old*n+Math.max(0,Math.min(100,v)))/(n+1));s.samples=n+1;
+ });
+}
+function skillProfileScore(){const vals=Object.keys(PROFESSIONAL_SKILLS).map(k=>skillEntry(k)).filter(x=>x.samples>0).map(x=>x.score);return vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):0}
+function termProfessionalScore(id){
+ const t=term(id);if(!t)return 0;
+ const s=srsInfo(id),c=coachStat(id),speech=Number(state.termSpeech[id]||0);
+ const knowledge=Math.min(100,Math.round((s.box||0)/5*100));
+ const applied=Math.min(100,Number(c.mastery||0));
+ return Math.round(knowledge*.35+applied*.35+speech*.30);
+}
+function professionalKnowledgeScore(){return TERMS.length?Math.round(TERMS.reduce((sum,t)=>sum+termProfessionalScore(t.id),0)/TERMS.length):0}
+function professionalReadiness(){
+ const knowledge=professionalKnowledgeScore();
+ const tests=pct(state.correct,state.total);
+ const speech=skillProfileScore()||(state.aiScores.length?Math.round(state.aiScores.slice(-10).reduce((a,b)=>a+b,0)/Math.min(10,state.aiScores.length)):0);
+ const sim=state.simSession.scores.length?Math.round(state.simSession.scores.slice(-8).reduce((a,b)=>a+b,0)/Math.min(8,state.simSession.scores.length)):speech;
+ return Math.round(knowledge*.30+tests*.15+speech*.25+sim*.30);
+}
+readinessScore=professionalReadiness;
+
+function weakestProfessionalSkill(){
+ const sampled=Object.keys(PROFESSIONAL_SKILLS).map(id=>({id,...skillEntry(id)})).filter(x=>x.samples>0).sort((a,b)=>a.score-b.score);
+ return sampled[0]||{id:"terminology",score:0,samples:0};
+}
+function nextBestTraining(){
+ const weak=weakestProfessionalSkill();
+ if(professionalKnowledgeScore()<60)return {view:"coach",title:"Coach",why:"Закрепить термины через применение, а не чтение."};
+ if(weak.id==="terminology")return {view:"coach",title:"Coach",why:"Термины пока недостаточно свободно используются в речи."};
+ if(["clarity","directness","structure"].includes(weak.id))return {view:"speak",title:"Живая речь",why:"Нужен короткий структурированный ответ без лишних слов."};
+ if(["evidence","metrics","risk_handling"].includes(weak.id))return {view:"investor",title:"Встреча с инвестором",why:"Нужна практика доказательств, цифр и неудобных follow-up вопросов."};
+ return {view:"investor",title:"Встреча с инвестором",why:"Следующий рост даст живая профессиональная практика."};
+}
+function skillBarsHtml(){
+ return `<div class="skill-profile">${Object.entries(PROFESSIONAL_SKILLS).map(([id,label])=>{const s=skillEntry(id);return `<div class="skill-row"><div class="row between"><span>${label}</span><strong>${s.samples?s.score+"%":"—"}</strong></div><div class="progress"><div style="width:${s.samples?s.score:0}%"></div></div></div>`}).join("")}</div>`;
+}
+
+function startInvestorScenario(id){
+ if(!INVESTOR_SCENARIOS[id])return;
+ state.simScenario=id;
+ state.simSession={active:true,turn:0,maxTurns:6,complete:false,scores:[],summary:"",lastFeedback:""};
+ state.messages=[{who:"ai",text:INVESTOR_SCENARIOS[id].opening}];
+ state.aiHistory=[];
+ voiceBuffers.sim="";
+ save();renderInvestor();
+}
+function simulatorScenarioTabs(){
+ return `<div class="filterbar">${Object.entries(INVESTOR_SCENARIOS).map(([id,s])=>`<button class="${state.simScenario===id?'active':''}" onclick="startInvestorScenario('${id}')">${s.title}</button>`).join("")}</div>`;
+}
+function simulatorSummaryHtml(){
+ if(!state.simSession.complete)return "";
+ const avg=state.simSession.scores.length?Math.round(state.simSession.scores.reduce((a,b)=>a+b,0)/state.simSession.scores.length):0;
+ const weak=weakestProfessionalSkill(),next=nextBestTraining();
+ return `<div class="feedback"><strong>Встреча завершена · ${avg}/100</strong><p>${safe(state.simSession.summary||"Сессия завершена. Повторите слабое место в отдельной тренировке.")}</p><p><strong>Слабее всего:</strong> ${safe(PROFESSIONAL_SKILLS[weak.id])}${weak.samples?` · ${weak.score}%`:""}.</p><button class="btn" onclick="go('${next.view}')">Следующий лучший шаг: ${safe(next.title)}</button></div>`;
+}
+
+const _applyAiResultV10=applyAiResult;
+applyAiResult=function(res,mode,userText){
+ const score=_applyAiResultV10(res,mode,userText);
+ updateSkillProfile(res.dimensions);
+ if(mode==="sim"){state.simSession.scores.push(score);state.simSession.lastFeedback=res.verdict||""}
+ save();return score;
+};
+
+feedbackHtml=function(res){
+ const dims=res.dimensions||{};
+ return `<div class="feedback ai-feedback"><div class="row between"><strong>AI-оценка: ${safe(res.score)}/100</strong><span class="tag">PRO COACH</span></div><p>${safe(res.verdict)}</p>
+ ${(res.strengths||[]).length?`<p><strong>Сильные стороны:</strong> ${(res.strengths||[]).map(safe).join(" • ")}</p>`:""}
+ ${(res.improvements||[]).length?`<p><strong>Исправить:</strong> ${(res.improvements||[]).map(safe).join(" • ")}</p>`:""}
+ ${(res.contradictions||[]).length?`<p><strong>Противоречия:</strong> ${(res.contradictions||[]).map(safe).join(" • ")}</p>`:""}
+ ${(res.red_flags||[]).length?`<p><strong>Red flags:</strong> ${(res.red_flags||[]).map(safe).join(" • ")}</p>`:""}
+ ${Object.keys(PROFESSIONAL_SKILLS).some(k=>Number.isFinite(Number(dims[k])))?`<details><summary>Оценка навыков</summary>${Object.entries(PROFESSIONAL_SKILLS).map(([id,label])=>`<p class="small"><strong>${label}:</strong> ${safe(dims[id]??"—")}/100</p>`).join("")}</details>`:""}
+ ${res.follow_up_reason?`<p class="small"><strong>Почему следующий вопрос:</strong> ${safe(res.follow_up_reason)}</p>`:""}
+ ${res.model_answer?`<details><summary>Показать сильный вариант ответа</summary><p>${safe(res.model_answer)}</p></details>`:""}</div>`;
+};
+
+renderInvestor=function(){
+ if(!state.simSession.active&&!state.messages.length)state.messages=[];
+ const scenario=INVESTOR_SCENARIOS[state.simScenario]||INVESTOR_SCENARIOS.first_meeting;
+ const msgs=state.messages.length?state.messages:[{who:"ai",text:scenario.opening}];
+ const turn=Math.min(state.simSession.turn+1,state.simSession.maxTurns);
+ document.querySelector("#view-investor").innerHTML=`<div class="grid grid-2"><div class="card voice-card"><div class="row between"><div><span class="tag">AI INVESTOR SIMULATOR</span><h2>${safe(scenario.title)}</h2></div>${aiStatusHtml()}</div>${simulatorScenarioTabs()}<p class="muted">${safe(scenario.desc)}</p><div class="sim-chat" id="simChat">${msgs.map(m=>`<div class="bubble ${m.who}">${safe(m.text)}</div>`).join("")}</div>${state.simSession.complete?simulatorSummaryHtml():`<p class="muted">Вопрос ${turn} из ${state.simSession.maxTurns}. Ответьте голосом как на реальной встрече. Следующий вопрос будет выбран по слабому месту или противоречию вашего ответа.</p>${voicePanel("sim")}`}<div class="row"><button class="btn secondary" onclick="startInvestorScenario('${state.simScenario}')">Начать заново</button></div></div><div class="card"><h3>Профессиональный профиль</h3><p class="muted">Оценивается не длина ответа, а качество профессионального мышления и речи.</p>${skillBarsHtml()}<div id="simFeedback">${state.simSession.lastFeedback?`<div class="feedback">${safe(state.simSession.lastFeedback)}</div>`:`<div class="feedback">После каждого ответа здесь будет конкретный разбор.</div>`}</div>${!aiReady()?`<div class="ai-connect"><h3>Подключить AI</h3><p class="small muted">Для динамических follow-up вопросов и точной голосовой оценки нужен backend из папки <code>backend</code>.</p><input id="aiApiBase" class="input" placeholder="https://investor-coach-ai.YOUR.workers.dev" value="${safe(apiBase())}"><button class="btn" onclick="saveApiBase()">Сохранить AI URL</button></div>`:""}</div></div>`;
+ const chat=document.querySelector("#simChat");if(chat)chat.scrollTop=chat.scrollHeight;restoreVoiceTranscript("sim");
+};
+
+const _evaluateWithAIV10=evaluateWithAI;
+evaluateWithAI=async function(ch,text){
+ if(ch!=="sim"&&ch!=="coach")return _evaluateWithAIV10(ch,text);
+ const status=document.querySelector("#voiceStatus-"+ch);if(status)status.textContent="AI анализирует ответ…";
+ try{
+  let extra={};
+  if(ch==="coach"){
+   const task=coachSession?.tasks?.[coachSession.index],t=task?term(task.termId):null;
+   extra={training_mode:"coach_speech",term:t?{id:t.id,word:t.word,definition:t.simple,example:t.example,investor:t.investor,why:t.why}:null,prompt:task?.prompt||"",skill_profile:state.skillProfile};
+  }else{
+   const scenario=INVESTOR_SCENARIOS[state.simScenario]||INVESTOR_SCENARIOS.first_meeting;
+   extra={training_mode:"investor_simulator",scenario:{id:state.simScenario,title:scenario.title,description:scenario.desc},turn:state.simSession.turn,max_turns:state.simSession.maxTurns,skill_profile:state.skillProfile,session_scores:state.simSession.scores.slice(-8)};
+  }
+  const res=await aiCoach(ch,text,extra),score=applyAiResult(res,ch,text);
+  if(ch==="coach"){
+   const task=coachSession?.tasks?.[coachSession.index];
+   if(task&&task.type==="speech"&&!task.answered){
+    task.answered=true;task.score=score;task.feedback=feedbackHtml(res);
+    state.termSpeech[task.termId]=Math.round((Number(state.termSpeech[task.termId]||score)+score)/2);
+    coachRecordResult(task,score>=75);voiceBuffers.coach="";save();renderCoach();renderDashboard();
+   }
+  }else{
+   state.simSession.turn++;
+   const finished=!!res.session_complete||state.simSession.turn>=state.simSession.maxTurns;
+   state.simSession.complete=finished;
+   state.simSession.summary=String(res.session_summary||res.verdict||"").slice(0,2000);
+   state.messages.push({who:"you",text},{who:"ai",text:finished?"Встреча завершена. Разберите результат справа и отработайте слабое место.":(res.next_question||"Уточните ответ конкретнее.")});
+   setDaily("sim");voiceBuffers.sim="";save();renderInvestor();setTimeout(()=>{const f=document.querySelector("#simFeedback");if(f)f.innerHTML=feedbackHtml(res)},20);renderDashboard();
+  }
+  if(status)status.textContent="Ответ оценён";
+ }catch(e){
+  console.error(e);toast("AI временно недоступен — использую локальную оценку.");
+  if(ch==="sim")evaluateSim(text);else evaluateCoachSpeechLocal(text);
+ }
+};
+
+const _renderDashboardV10=renderDashboard;
+renderDashboard=function(){
+ _renderDashboardV10();
+ const root=document.querySelector("#view-dashboard");if(!root)return;
+ const next=nextBestTraining(),score=professionalReadiness(),weak=weakestProfessionalSkill();
+ root.insertAdjacentHTML("beforeend",`<div class="card"><div class="row between"><div><span class="tag">PROFESSIONAL READINESS</span><h2>${score}%</h2><p class="muted">Знание терминов + применение + речь + ответы инвестору.</p></div><div><strong>${weak.samples?`Слабее: ${safe(PROFESSIONAL_SKILLS[weak.id])}`:"Начните голосовую практику"}</strong><p class="muted small">${safe(next.why)}</p><button class="btn" onclick="go('${next.view}')">${safe(next.title)}</button></div></div></div>`);
+};
+
+const _renderCoachV10=renderCoach;
+renderCoach=function(){
+ _renderCoachV10();
+ if(!coachSession)return;
+ if(coachSession.index>=coachSession.tasks.length){
+  const card=document.querySelector("#view-coach .card");if(!card)return;
+  const next=nextBestTraining();
+  card.insertAdjacentHTML("beforeend",`<div class="feedback"><strong>Следующая лучшая тренировка</strong><p>${safe(next.why)}</p><button class="btn secondary" onclick="go('${next.view}')">${safe(next.title)}</button></div>`);
+ }
+};
+try{renderDashboard()}catch{}
