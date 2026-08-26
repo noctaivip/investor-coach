@@ -158,3 +158,67 @@ GitHub Pages — статический хостинг и не может без
 В `backend/` добавлен Corporate Cloud на Cloudflare Workers + D1: организация, admin/manager/learner, защищённые сессии, приглашения сотрудников, серверная синхронизация учебного прогресса и базовый список команды. Подробный deploy — `backend/README.md`.
 
 Без настроенного D1/backend приложение продолжает работать локально как раньше.
+
+
+## Corporate Manager v8.6
+
+Поверх Corporate Cloud добавлены реальные инструменты для корпоративного пилота:
+
+- dashboard руководителя только на фактических данных сотрудников;
+- активность за последние 7 дней;
+- baseline/final completion и средние результаты;
+- назначение Coach-программы сотруднику: 7 / 30 / 365 дней;
+- дедлайн и целевой итоговый score;
+- список активных/завершённых/просроченных назначений;
+- сотрудник видит свою назначенную программу и может открыть её в Coach;
+- assignment автоматически закрывается после новой итоговой диагностики, если её score достиг цели;
+- audit foundation для создания приглашений, назначений и завершения программ.
+
+Для уже созданной D1 из v8.5 примените миграцию:
+
+```bash
+cd backend
+npx wrangler d1 execute investor-coach-production --remote --file=./migrations/0002_assignments_dashboard.sql
+```
+
+Для новой базы достаточно выполнить актуальный `schema.sql`.
+
+
+## Enterprise Security v8.7
+
+Добавлены role-based permissions для `admin / manager / learner`, управление ролями, принудительное завершение сессий сотрудника, видимый audit trail администратора и OIDC-ready конфигурация без хранения client secret во фронтенде или D1.
+
+Для существующей D1 после v8.6 примените:
+
+```bash
+cd backend
+npx wrangler d1 execute investor-coach-production --remote --file=./migrations/0003_rbac_audit_sso.sql
+```
+
+SSO в v8.7 — подготовленный безопасный configuration layer. Чтобы включить реальный корпоративный вход через конкретный IdP, следующим шагом добавляется OIDC authorization-code + PKCE callback и секрет IdP в Cloudflare Worker secret.
+
+
+## Enterprise SSO v8.8
+
+Добавлен рабочий OIDC Authorization Code + PKCE flow. Пользователь входит через корпоративный Identity Provider по рабочему email, а session token не передаётся через URL.
+
+Для D1 после v8.7 примените `backend/migrations/0004_oidc_pkce.sql`.
+
+
+## Enterprise Provisioning v8.9
+
+Добавлен SCIM 2.0 user provisioning: корпоративный Identity Provider может автоматически создавать, обновлять и деактивировать сотрудников. Администратор генерирует SCIM bearer token один раз; на сервере хранится только его hash.
+
+
+## Enterprise Reporting v9.0
+
+Для `admin` и `manager` доступны server-side HR/L&D exports:
+
+- сотрудники и learning outcomes;
+- назначения, дедлайны и completion;
+- audit CSV — только `admin`;
+- JSON summary endpoint: `GET /api/account/reports/summary`.
+
+CSV формируется на backend из данных текущей организации и требует действующую корпоративную сессию.
+
+Дополнительно в `/docs` включён procurement/security baseline. Документы описывают реализованные контроли и отдельно перечисляют то, что ещё требует организационной, юридической или независимой проверки. Они не заявляют SOC 2/ISO сертификацию.

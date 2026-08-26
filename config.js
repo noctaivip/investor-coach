@@ -3,5 +3,5 @@
 window.INVESTOR_COACH_CONFIG = {
   apiBase: "",
   aiModelLabel: "AI Investor",
-  version: "8.5.0"
+  version: "9.0.0"
 };
