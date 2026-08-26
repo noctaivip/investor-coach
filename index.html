@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#5b5cf0">
+  <meta name="description" content="Русский тренер для предпринимателей: инвесторские термины, pitch, переговоры и симуляции встреч с инвесторами.">
+  <meta name="application-name" content="Investor Coach">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Investor Coach">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Investor Coach — тренер для предпринимателей</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon-180.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Основная навигация">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">IC</div>
+        <div>
+          <strong>Investor Coach</strong>
+          <span>30-дневная тренировка</span>
+        </div>
+      </div>
+      <nav id="nav">
+        <button class="nav-item active" data-view="dashboard">🏠 Главная</button>
+        <button class="nav-item" data-view="learn">📚 Изучение</button>
+        <button class="nav-item" data-view="train">🧠 Тренировка</button>
+        <button class="nav-item" data-view="speak">🎤 Говори</button>
+        <button class="nav-item" data-view="pitch">🚀 Pitch</button>
+        <button class="nav-item" data-view="investor">🤝 Симуляция инвестора</button>
+        <button class="nav-item" data-view="roadmap">🗺️ Курс на 30 дней</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="mini-progress"><div id="sideProgress"></div></div>
+        <small id="dayLabel">День 1 из 30</small>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Открыть меню" aria-controls="nav">☰</button>
+        <div class="title-wrap">
+          <div class="eyebrow">STARTUP & INVESTOR COACH</div>
+          <h1 id="pageTitle">Главная</h1>
+        </div>
+        <div class="topbar-actions">
+          <button class="install-btn" id="installApp" type="button">Установить приложение</button>
+          <span class="install-state" id="installState" hidden>Приложение установлено</span>
+          <div class="streak" title="Серия дней">🔥 <span id="streak">0</span> дн.</div>
+        </div>
+      </header>
+
+      <section id="view-dashboard" class="view active"></section>
+      <section id="view-learn" class="view"></section>
+      <section id="view-train" class="view"></section>
+      <section id="view-speak" class="view"></section>
+      <section id="view-pitch" class="view"></section>
+      <section id="view-investor" class="view"></section>
+      <section id="view-roadmap" class="view"></section>
+    </main>
+  </div>
+
+  <div id="installModal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="installModalTitle">
+    <div class="modal-card">
+      <div class="row between">
+        <h2 id="installModalTitle">Установка приложения</h2>
+        <button id="installClose" class="icon-btn" type="button" aria-label="Закрыть">×</button>
+      </div>
+      <p id="installHelpText" class="install-help"></p>
+      <button class="btn modal-ok" type="button" onclick="closeInstallHelp()">Понятно</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="./data.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
