@@ -1,4 +1,4 @@
-const APP_VERSION = "8.2.0";
+const APP_VERSION = "8.3.0";
 const STATIC_CACHE = `investor-coach-static-${APP_VERSION}`;
 const RUNTIME_CACHE = `investor-coach-runtime-${APP_VERSION}`;
 const APP_SHELL = [

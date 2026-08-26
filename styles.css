@@ -77,3 +77,11 @@ textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:
 
 /* v8 clear quiz feedback */
 .answer-result{margin-top:18px;padding:12px 14px;border-radius:12px;font-size:18px}.answer-result.is-correct{background:#ecf9f1;color:#11683b}.answer-result.is-wrong{background:#fff0ee;color:#a52f24}.answer-line{margin-top:10px;padding:12px 14px;border-radius:12px;display:grid;gap:4px}.answer-line span{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}.wrong-line{background:#fff0ee;border:1px solid #f2c8c2;color:#8d2a21}.correct-line{background:#ecf9f1;border:1px solid #bfe4cd;color:#11683b}.lesson-feedback{background:#f7f8fb;border:1px solid var(--line)}.lesson-feedback p{margin:8px 0}.option:disabled{cursor:default}.feedback-next{width:100%;min-height:50px;font-size:15px}
+
+/* v8.3 Coach: главный раздел без изменения общей визуальной системы */
+.bottom-nav-item[data-view="coach"]{color:#4f46e5;background:#eef2ff;font-weight:900}
+.bottom-nav-item[data-view="coach"].active{color:#fff;background:var(--primary);box-shadow:0 6px 16px rgba(91,92,240,.26)}
+.nav-item[data-view="coach"]{color:#d9dcff;border:1px solid rgba(124,58,237,.24)}
+.nav-item[data-view="coach"].active{background:#4338ca;color:#fff;border-color:#5b5cf0}
+.coach-back{margin-bottom:10px}.coach-plan-tabs{margin:16px 0 12px}
+@media(max-width:720px){.coach-back{min-height:44px;padding:9px 14px}.coach-plan-tabs{margin-right:0;padding-right:0}}
