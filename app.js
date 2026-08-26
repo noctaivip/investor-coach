@@ -189,7 +189,8 @@ addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstallPro
 async function installApp(){if(isStandalone()){setInstallState();return}if(deferredInstallPrompt){deferredInstallPrompt.prompt();await deferredInstallPrompt.userChoice;deferredInstallPrompt=null;setInstallState();return}openInstallHelp()}
 let installModalReturnFocus=null;function openInstallHelp(){installModalReturnFocus=document.activeElement;const m=$("#installModal"),body=$("#installHelpText");if(isIOS())body.innerHTML='<strong>iPhone / iPad:</strong><br>1. Откройте сайт в Safari.<br>2. Нажмите <strong>«Поделиться»</strong>.<br>3. Выберите <strong>«На экран „Домой“»</strong>.<br>4. Подтвердите добавление.';else body.innerHTML='<strong>Android:</strong><br>Откройте меню браузера и выберите <strong>«Установить приложение»</strong> или используйте системную кнопку установки.';m.hidden=false;document.body.classList.add('modal-open');setTimeout(()=>$("#installClose")?.focus(),0)}
 function closeInstallHelp(){$("#installModal").hidden=true;document.body.classList.remove('modal-open');if(installModalReturnFocus&&typeof installModalReturnFocus.focus==='function')installModalReturnFocus.focus();installModalReturnFocus=null}$("#installApp")?.addEventListener('click',installApp);$("#installClose")?.addEventListener('click',closeInstallHelp);$("#installModal")?.addEventListener('click',e=>{if(e.target.id==='installModal')closeInstallHelp()});document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$("#installModal")?.hidden)closeInstallHelp()});setInstallState();
-if('serviceWorker' in navigator)addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();let refreshing=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(refreshing)return;refreshing=true;location.reload()});reg.addEventListener('updatefound',()=>{const w=reg.installing;if(!w)return;w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller)w.postMessage({type:'SKIP_WAITING'})})})}catch(err){console.error('Service Worker:',err)}});
+function updateCanActivate(){return !voiceRunning&&!coachSession&&!state.exam?.active&&!state.accel?.active}
+if('serviceWorker' in navigator)addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await reg.update();let refreshing=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(refreshing)return;refreshing=true;location.reload()});const activateWaiting=()=>{if(reg.waiting&&updateCanActivate())reg.waiting.postMessage({type:'SKIP_WAITING'})};activateWaiting();reg.addEventListener('updatefound',()=>{const w=reg.installing;if(!w)return;w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller){if(updateCanActivate())w.postMessage({type:'SKIP_WAITING'});else toast('Обновление готово и установится после текущей сессии.')}})});document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')activateWaiting()})}catch(err){console.error('Service Worker:',err)}});
 
 
 /* ===== Production learning engine + AI Investor v5 ===== */
@@ -287,7 +288,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 
 function installCtaHtml(){return `<div class="card install-cta"><div><span class="tag">PWA ДЛЯ ТЕЛЕФОНА</span><h2>Investor Coach как приложение</h2><p class="muted">Установите сайт на телефон: отдельная иконка, standalone-режим и офлайн-доступ к основным материалам.</p></div><button class="btn install-download" onclick="installApp()">⬇ Скачать приложение</button></div>`}
 const _renderDashboardV6=renderDashboard;
-renderDashboard=function(){_renderDashboardV6();const root=document.querySelector('#view-dashboard');if(root){const top=document.createElement('div');top.className='v6-dashboard-top';top.innerHTML=installCtaHtml()+`<div data-accel-slot>${accelCoachHtml()}</div>`;root.prepend(top)}setInstallState()}
+renderDashboard=function(){_renderDashboardV6();const root=document.querySelector('#view-dashboard');if(root){const top=document.createElement('div');top.className='v6-dashboard-top';top.innerHTML=installCtaHtml();root.prepend(top)}setInstallState()}
 const _renderRoadmapV6=renderRoadmap;
 renderRoadmap=function(){_renderRoadmapV6();const root=document.querySelector('#view-roadmap');if(root){const slot=document.createElement('div');slot.setAttribute('data-accel-slot','');slot.innerHTML=accelCoachHtml();root.prepend(slot)}}
 const _setInstallStateV6=setInstallState;
@@ -853,7 +854,7 @@ function skillDeltaHtml(){
 }
 
 const _finishPlacementV14Proficiency=finishPlacement;
-finishPlacement=function(){_finishPlacementV14Proficiency();if(state.placement.done&&!state.baseline.captured)captureBaseline()};
+finishPlacement=function(){_finishPlacementV14Proficiency();if(state.placement.done&&!state.baseline.captured){captureBaseline();renderDashboard()}};
 
 const _renderInvestorV14Proficiency=renderInvestor;
 renderInvestor=function(){
@@ -871,3 +872,281 @@ renderDashboard=function(){
  const root=$("#view-dashboard");if(root)root.insertAdjacentHTML("beforeend",baselineProgressHtml()+skillDeltaHtml());
 };
 try{renderDashboard()}catch{}
+
+
+/* ===== Production Hardening v16 ===== */
+state.runtimeHealth=Object.assign({lastBoot:"",lastError:"",errorCount:0},state.runtimeHealth||{});
+state.runtimeHealth.lastBoot=new Date().toISOString();
+
+window.addEventListener("error",e=>{
+ try{state.runtimeHealth.lastError=String(e?.message||"Ошибка интерфейса").slice(0,500);state.runtimeHealth.errorCount=(state.runtimeHealth.errorCount||0)+1;save()}catch{}
+});
+window.addEventListener("unhandledrejection",e=>{
+ try{state.runtimeHealth.lastError=String(e?.reason?.message||e?.reason||"Ошибка операции").slice(0,500);state.runtimeHealth.errorCount=(state.runtimeHealth.errorCount||0)+1;save()}catch{}
+});
+
+function safeGo(view){
+ try{go(view)}catch(e){console.error(e);toast("Не удалось открыть раздел. Повторите действие.")}
+}
+function currentLearningCheckpoint(){
+ if(state.exam?.active)return {view:"investor",label:"Продолжить экзамен"};
+ if(coachSession)return {view:"coach",label:"Продолжить Coach"};
+ if(state.accel?.active)return {view:"roadmap",label:"Продолжить интенсив"};
+ return null;
+}
+document.addEventListener("visibilitychange",()=>{
+ if(document.visibilityState==="visible"){
+  try{refreshAccelUI();setInstallState();if(state.accel?.active&&!accelIsPaused())requestWakeLock()}catch{}
+ }
+});
+window.addEventListener("online",()=>{try{toast("Соединение восстановлено")}catch{}});
+window.addEventListener("offline",()=>{try{toast("Офлайн-режим: основные материалы доступны из кэша")}catch{}});
+
+
+/* ===== Pilot Evidence Engine v17 ===== */
+state.pilotEvidence=Object.assign({consent:false,startedAt:"",completedAt:"",pre:null,post:null,retention:null,notes:""},state.pilotEvidence||{});
+
+function pilotSnapshot(){
+ return {
+  at:new Date().toISOString(),
+  readiness:professionalReadiness(),
+  retention:retentionScore(),
+  exam:state.exam?.complete?examAverage():null,
+  placement:state.placement?.score??null,
+  skills:snapshotSkills()
+ };
+}
+function startPilotEvidence(){
+ if(!state.placement?.done){toast("Сначала завершите входную диагностику.");go("dashboard");return}
+ state.pilotEvidence.consent=true;
+ state.pilotEvidence.startedAt=new Date().toISOString();
+ state.pilotEvidence.pre=pilotSnapshot();
+ state.pilotEvidence.post=null;state.pilotEvidence.retention=null;state.pilotEvidence.completedAt="";
+ save();renderDashboard();
+}
+function capturePilotPost(){
+ if(!state.pilotEvidence.pre){toast("Сначала зафиксируйте старт пилота.");return}
+ if(!state.exam?.complete){toast("Сначала завершите Investor Meeting Exam.");go("investor");return}
+ state.pilotEvidence.post=pilotSnapshot();
+ state.pilotEvidence.completedAt=new Date().toISOString();
+ save();renderDashboard();
+}
+function capturePilotRetention(){
+ if(!state.pilotEvidence.post){toast("Сначала зафиксируйте итог после экзамена.");return}
+ const score=validationScore();
+ if(score==null){toast("Недостаточно изученного материала для проверки удержания.");return}
+ state.pilotEvidence.retention={at:new Date().toISOString(),score};
+ save();renderDashboard();
+}
+function pilotSkillRows(){
+ const pre=state.pilotEvidence.pre?.skills||{},post=state.pilotEvidence.post?.skills||{};
+ return Object.entries(PROFESSIONAL_SKILLS).map(([id,label])=>{
+  const a=pre[id],b=post[id],d=delta(a,b);
+  return `<div class="skill-row"><div class="row between"><span>${label}</span><strong>${a==null||b==null?"—":`${a}% → ${b}% (${deltaText(d)})`}</strong></div><div class="progress"><div style="width:${b||0}%"></div></div></div>`;
+ }).join("");
+}
+function pilotEvidenceHtml(){
+ const p=state.pilotEvidence;
+ if(!p.pre)return `<div class="card"><div class="row between"><div><span class="tag">PILOT EVIDENCE</span><h3>Зафиксировать результат обучения</h3><p class="muted">Сохраняет стартовую точку, затем итоговый экзамен и отдельную проверку удержания. Данные остаются на этом устройстве.</p></div><button class="btn" onclick="startPilotEvidence()">Начать измерение</button></div></div>`;
+ const pre=p.pre,post=p.post;
+ return `<div class="card"><div class="row between"><div><span class="tag">PILOT EVIDENCE</span><h3>${post?"Результат зафиксирован":"Идёт измерение"}</h3><p class="muted">Baseline: ${safe(new Date(pre.at).toLocaleDateString("ru-RU"))}${post?` · итог: ${safe(new Date(post.at).toLocaleDateString("ru-RU"))}`:""}</p></div><strong>${post?`${pre.readiness}% → ${post.readiness}%`:`Старт ${pre.readiness}%`}</strong></div>
+ ${post?`<div class="feedback"><strong>Изменение Professional Readiness: ${deltaText(delta(pre.readiness,post.readiness))}</strong><p>Удержание: ${pre.retention}% → ${post.retention}% · Экзамен: ${post.exam??"—"}/100</p></div><div class="skill-profile">${pilotSkillRows()}</div>`:`<p>Пройдите выбранный маршрут и затем Investor Meeting Exam. До завершения экзамена итог не фиксируется.</p><button class="btn" onclick="go('investor')">Перейти к экзамену</button><button class="btn secondary" onclick="capturePilotPost()">Зафиксировать итог</button>`}
+ ${post&&!p.retention?`<button class="btn secondary" onclick="capturePilotRetention()">Проверить удержание позже</button>`:""}
+ ${p.retention?`<div class="feedback"><strong>Контроль удержания: ${p.retention.score}%</strong><p class="small muted">${safe(new Date(p.retention.at).toLocaleDateString("ru-RU"))}</p></div>`:""}
+ <p class="small muted">Это внутренняя учебная метрика. Для коммерческих заявлений об эффективности требуется пилот на реальных пользователях и внешне проверяемая методика.</p></div>`;
+}
+
+const _renderDashboardV16Pilot=renderDashboard;
+renderDashboard=function(){
+ _renderDashboardV16Pilot();
+ if(state.placement?.active)return;
+ const root=$("#view-dashboard");if(root)root.insertAdjacentHTML("beforeend",pilotEvidenceHtml());
+};
+try{renderDashboard()}catch{}
+
+
+/* ===== Release Candidate Update Check v18 ===== */
+async function checkPwaUpdate(){
+ if(!("serviceWorker" in navigator))return;
+ try{
+  const reg=await navigator.serviceWorker.getRegistration();
+  if(reg)await reg.update();
+ }catch(e){console.warn("PWA update check failed",e)}
+}
+window.addEventListener("load",()=>{
+ setTimeout(checkPwaUpdate,2500);
+ setInterval(checkPwaUpdate,60*60*1000);
+});
+document.addEventListener("visibilitychange",()=>{
+ if(document.visibilityState==="visible")setTimeout(checkPwaUpdate,800);
+});
+
+
+/* ===== End-to-End QA Fixes v19 ===== */
+state.retentionCheck=Object.assign({active:false,index:0,items:[],answers:[],startedAt:"",finishedAt:"",score:null},state.retentionCheck||{});
+
+function retentionCandidates(){
+ const learned=new Set(TERMS.filter(t=>{
+  const sr=srsInfo(t.id),cs=coachStat(t.id);
+  return (sr.box||0)>=1||(cs.seen||0)>=2||(cs.mastery||0)>=20;
+ }).map(t=>t.id));
+ let qs=QUIZ.filter(q=>learned.has(q.termId));
+ if(qs.length<6)qs=QUIZ.filter(q=>term(q.termId));
+ return qs;
+}
+function buildRetentionItems(limit=8){
+ const pool=[...retentionCandidates()];
+ const selected=[];
+ while(pool.length&&selected.length<limit){
+  const i=Math.floor(Math.random()*pool.length);
+  selected.push(pool.splice(i,1)[0]);
+ }
+ return selected;
+}
+function startRetentionCheck(){
+ const items=buildRetentionItems(8);
+ if(items.length<4){toast("Сначала пройдите несколько терминов и тестов.");return}
+ state.retentionCheck={active:true,index:0,items:items.map(q=>({termId:q.termId,q:q.q,options:[...q.options],a:q.a,comment:q.comment||""})),answers:[],startedAt:new Date().toISOString(),finishedAt:"",score:null};
+ save();go("dashboard",{history:false});renderDashboard();
+}
+function answerRetentionCheck(i){
+ const r=state.retentionCheck,item=r.items[r.index];
+ if(!r.active||!item||r.answers[r.index])return;
+ r.answers[r.index]={selected:i,correct:i===item.a};save();renderDashboard();
+}
+function nextRetentionCheck(){
+ const r=state.retentionCheck;if(!r.active||!r.answers[r.index])return;
+ if(r.index>=r.items.length-1){finishRetentionCheck();return}
+ r.index++;save();renderDashboard();
+}
+function finishRetentionCheck(){
+ const r=state.retentionCheck,right=r.answers.filter(x=>x?.correct).length;
+ r.score=Math.round(right/Math.max(1,r.items.length)*100);r.active=false;r.finishedAt=new Date().toISOString();
+ state.validation.retentionAt=r.finishedAt;state.validation.retentionScore=r.score;
+ if(state.pilotEvidence?.post)state.pilotEvidence.retention={at:r.finishedAt,score:r.score};
+ proficiencySnapshot("retention_check");
+ save();renderDashboard();
+}
+function retentionCheckHtml(){
+ const r=state.retentionCheck,item=r.items[r.index],ans=r.answers[r.index],n=r.index+1;
+ if(!r.active||!item)return "";
+ const t=term(item.termId);
+ return `<div class="card quiz-card"><div class="row between"><span class="tag">ПРОВЕРКА УДЕРЖАНИЯ · ${n}/${r.items.length}</span><span class="muted small">Без карточек и подсказок</span></div><h2>${safe(item.q)}</h2><div>${item.options.map((o,i)=>`<button class="option ${ans?(i===item.a?'correct':i===ans.selected?'wrong':''):''}" ${ans?'disabled':''} onclick="answerRetentionCheck(${i})">${safe(o)}</button>`).join("")}</div>${ans?`<div class="feedback"><strong>${ans.correct?'Верно':'Ошибка'}</strong><p>Правильный ответ: <strong>${safe(item.options[item.a])}</strong>.</p>${t?`<p class="small muted">${safe(t.simple)}</p>`:""}</div><button class="btn feedback-next" onclick="nextRetentionCheck()">${n===r.items.length?'Завершить проверку':'Следующий вопрос'}</button>`:""}</div>`;
+}
+
+runRetentionValidation=function(){startRetentionCheck()};
+capturePilotRetention=function(){
+ if(!state.pilotEvidence?.post){toast("Сначала зафиксируйте итог после экзамена.");return}
+ startRetentionCheck();
+};
+
+const _renderDashboardV18QA=renderDashboard;
+renderDashboard=function(){
+ if(state.retentionCheck?.active){
+  const root=$("#view-dashboard");if(root)root.innerHTML=retentionCheckHtml();
+  return;
+ }
+ _renderDashboardV18QA();
+};
+
+/* Single navigation authority:
+   original pushAppHistory/go/restoreHistoryState remain the only Back-stack implementation. */
+function qaNavigationInvariant(){
+ return typeof pushAppHistory==="function"&&typeof restoreHistoryState==="function";
+}
+try{renderDashboard()}catch{}
+
+
+/* ===== Live Investor Dialogue v20 ===== */
+state.liveDialogue=Object.assign({started:false,scenario:"first_meeting"},state.liveDialogue||{});
+
+function investorAvatarHtml(){
+ return `<div class="investor-avatar" aria-hidden="true"><span>IC</span></div>`;
+}
+function liveScenarioTabs(){
+ return `<div class="live-scenario-tabs" role="tablist">${Object.entries(INVESTOR_SCENARIOS).map(([id,s])=>`<button role="tab" aria-selected="${state.simScenario===id}" class="${state.simScenario===id?'active':''}" onclick="startInvestorScenario('${id}')">${safe(s.title)}</button>`).join("")}</div>`;
+}
+function liveTermsHtml(){
+ const ids=(state.aiWeakTopics||[]).map(x=>term(x)?.id||x).filter(Boolean);
+ const learned=TERMS.filter(t=>ids.includes(t.id)).slice(0,4);
+ const fallback=TERMS.filter(t=>["traction","retention","cac","ltv","runway","valuation","dilution","tam","pmf","churn"].includes(t.id)).slice(0,4);
+ const list=learned.length?learned:fallback;
+ return `<div class="dialogue-term-strip">${list.map(t=>`<button onclick="go('learn');setTimeout(()=>openTerm('${t.id}'),0)">${safe(t.word)}</button>`).join("")}</div>`;
+}
+function liveMessageHtml(m){
+ const mine=m.who==="you";
+ return `<div class="live-message ${mine?'mine':'investor'}">${mine?'':investorAvatarHtml()}<div><div class="live-message-meta">${mine?'Вы':'AI-инвестор'}</div><div class="live-bubble">${safe(m.text)}</div></div></div>`;
+}
+function liveRecorderHtml(){
+ const connected=aiReady();
+ return `<div class="live-composer ${voiceRunning&&voiceChannel==='sim'?'is-recording':''}" id="voice-sim">
+   <div class="live-record-head"><div><span class="live-dot"></span><strong id="voiceStatus-sim">${voiceRunning&&voiceChannel==='sim'?'Запись идёт':'Готов к ответу'}</strong></div><span class="live-privacy">${connected?'Аудио отправится только после «Отправить»':'Подключите AI для точной расшифровки'}</span></div>
+   <div class="live-transcript" id="voiceTranscript-sim">${voiceBuffers.sim?safe(voiceBuffers.sim):'Говорите естественно. Не нужно диктовать по словам.'}</div>
+   <div class="live-composer-actions"><button class="live-mic" id="voiceStart-sim" onclick="toggleVoice('sim')" aria-label="Начать запись"><span>●</span> ${voiceRunning&&voiceChannel==='sim'?'Идёт запись':'Записать ответ'}</button><button class="live-send" onclick="submitVoice('sim')" ${connected?'':'title="Для лучшего качества подключите production AI"'}>Отправить <span>↑</span></button></div>
+ </div>`;
+}
+
+renderInvestor=function(){
+ const scenario=INVESTOR_SCENARIOS[state.simScenario]||INVESTOR_SCENARIOS.first_meeting;
+ const msgs=state.messages.length?state.messages:[{who:"ai",text:scenario.opening}];
+ const turn=Math.min(state.simSession.turn+1,state.simSession.maxTurns);
+ const avg=state.simSession.scores.length?Math.round(state.simSession.scores.reduce((a,b)=>a+b,0)/state.simSession.scores.length):null;
+ document.querySelector("#view-investor").innerHTML=`<div class="live-investor-shell">
+   <section class="live-investor-main">
+    <div class="live-investor-top"><div><span class="tag">LIVE INVESTOR</span><h2>Диалог с инвестором</h2><p>${safe(scenario.desc)}</p></div><div class="live-session-state"><span>${state.simSession.complete?'Завершено':`Вопрос ${turn}/${state.simSession.maxTurns}`}</span>${avg!==null?`<strong>${avg}/100</strong>`:''}</div></div>
+    ${liveScenarioTabs()}
+    <div class="live-chat" id="simChat">${msgs.map(liveMessageHtml).join("")}</div>
+    ${state.simSession.complete?simulatorSummaryHtml():liveRecorderHtml()}
+    <div class="live-chat-footer"><button class="live-reset" onclick="startInvestorScenario('${state.simScenario}')">Новая встреча</button><span>${aiReady()?'AI адаптирует следующий вопрос к вашему ответу':'Локальный режим — подключите AI для живого диалога'}</span></div>
+   </section>
+   <aside class="live-investor-side">
+    <div class="live-side-card"><span class="tag">ФОКУС ВСТРЕЧИ</span><h3>${safe(scenario.title)}</h3><p>Отвечайте коротко: тезис → доказательство → цифра или факт → вывод.</p></div>
+    <div class="live-side-card"><h3>Термины в живой речи</h3><p>Тренер отслеживает, умеете ли вы применять термин по смыслу, а не просто произносить его.</p>${liveTermsHtml()}</div>
+    <div class="live-side-card"><h3>Разбор ответа</h3><div id="simFeedback">${state.simSession.lastFeedback?`<p>${safe(state.simSession.lastFeedback)}</p>`:'<p>После ответа здесь появится только конкретная корректировка — без лишней теории.</p>'}</div></div>
+    ${!aiReady()?`<div class="live-side-card ai-connect"><h3>Production voice</h3><p>Для точной серверной расшифровки и динамического диалога укажите HTTPS backend.</p><input id="aiApiBase" class="input" placeholder="https://your-worker.example" value="${safe(apiBase())}"><button class="btn" onclick="saveApiBase()">Подключить</button></div>`:''}
+   </aside>
+ </div>`;
+ const chat=document.querySelector("#simChat");if(chat)chat.scrollTop=chat.scrollHeight;restoreVoiceTranscript("sim");
+};
+
+function normalizeTranscript(text){
+ return String(text||"").replace(/\s+/g," ").replace(/([А-Яа-яA-Za-z0-9][,.!?])(?:\s+\1){1,}/gi,"$1").trim();
+}
+transcribeBlob=async function(blob){
+ const fd=new FormData(),ext=blob.type.includes("mp4")?"m4a":"webm";
+ fd.append("file",blob,"answer."+ext);fd.append("language","ru");
+ fd.append("context",JSON.stringify({scenario:state.simScenario,memory:state.aiMemory||"",terms:TERMS.map(t=>t.word).slice(0,120)}));
+ const r=await fetch(apiBase()+"/api/transcribe",{method:"POST",body:fd});
+ if(!r.ok)throw new Error("TRANSCRIBE_"+r.status);
+ const j=await r.json();return normalizeTranscript(j.text||"");
+};
+
+const _startMediaVoiceV20=startMediaVoice;
+startMediaVoice=async function(ch){
+ if(ch!=="sim")return _startMediaVoiceV20(ch);
+ if(mediaState.recorder&&mediaState.recorder.state==="recording")return;
+ try{
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1,sampleRate:48000}});
+  let mime="";for(const t of ["audio/webm;codecs=opus","audio/mp4","audio/webm"]){if(MediaRecorder.isTypeSupported(t)){mime=t;break}}
+  const rec=new MediaRecorder(stream,mime?{mimeType:mime,audioBitsPerSecond:96000}:{audioBitsPerSecond:96000});
+  mediaState.recorder=rec;mediaState.stream=stream;mediaState.ch=ch;mediaState.chunks=[];mediaState.startedAt=Date.now();voiceChannel=ch;voiceRunning=true;
+  rec.ondataavailable=e=>{if(e.data&&e.data.size)mediaState.chunks.push(e.data)};
+  rec.onstop=()=>{voiceRunning=false;setVoiceUI(ch,"Запись готова",false);stream.getTracks().forEach(t=>t.stop())};
+  rec.start(750);setVoiceUI(ch,"Запись идёт",true);const el=document.querySelector("#voiceTranscript-"+ch);if(el)el.textContent="Слушаю… говорите свободно до кнопки «Отправить».";
+ }catch(e){console.error(e);toast("Не удалось получить доступ к микрофону.")}
+};
+
+const _setVoiceUIV20=setVoiceUI;
+setVoiceUI=function(ch,status,running){
+ _setVoiceUIV20(ch,status,running);
+ if(ch!=="sim")return;
+ const wrap=document.querySelector("#voice-sim"),btn=document.querySelector("#voiceStart-sim");
+ wrap?.classList.toggle("is-recording",!!running);
+ if(btn)btn.innerHTML=running?"<span>●</span> Идёт запись":"<span>●</span> Записать ответ";
+};
+
+const _startInvestorScenarioV20=startInvestorScenario;
+startInvestorScenario=function(id){
+ _startInvestorScenarioV20(id);
+ state.liveDialogue={started:true,scenario:id};save();
+};

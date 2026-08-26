@@ -1,4 +1,4 @@
-const APP_VERSION = "15.0.0";
+const APP_VERSION = "20.0.0";
 const STATIC_CACHE = `investor-coach-static-${APP_VERSION}`;
 const RUNTIME_CACHE = `investor-coach-runtime-${APP_VERSION}`;
 const APP_SHELL = [
@@ -17,7 +17,6 @@ const APP_SHELL = [
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(STATIC_CACHE).then(cache => cache.addAll(APP_SHELL)));
-  self.skipWaiting();
 });
 
 self.addEventListener("activate", event => {
