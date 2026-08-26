@@ -222,3 +222,21 @@ SSO в v8.7 — подготовленный безопасный configuration 
 CSV формируется на backend из данных текущей организации и требует действующую корпоративную сессию.
 
 Дополнительно в `/docs` включён procurement/security baseline. Документы описывают реализованные контроли и отдельно перечисляют то, что ещё требует организационной, юридической или независимой проверки. Они не заявляют SOC 2/ISO сертификацию.
+
+## Production hardening v9.1
+
+Добавлены `/healthz`, `/readyz`, GitHub Actions quality gate, Dependabot и статические production-проверки. CI проверяет синтаксис JS, manifest/PWA, синхронизацию версий, размеры иконок, обязательные backend endpoints/security headers и D1 schema.
+
+Accessibility baseline добавляет keyboard/focus/ARIA/reduced-motion улучшения без переработки визуального интерфейса. Это не заменяет независимый WCAG 2.2 AA аудит.
+
+
+## Production Observability v9.2
+
+Added request IDs, structured backend logs, compatible error taxonomy, D1-backed rate limits, and D1 backup/restore runbooks.
+
+For an existing v9.1 database:
+
+```bash
+cd backend
+npx wrangler d1 execute investor-coach-production --remote --file=./migrations/0006_observability_rate_limits.sql
+```

@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#mainContent">Перейти к содержимому</a>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Основная навигация">
       <div class="brand">
@@ -27,15 +28,15 @@
         </div>
       </div>
       <nav id="nav">
-        <button class="nav-item active" data-view="dashboard">🏠 Главная</button>
-        <button class="nav-item" data-view="learn">📚 Изучение</button>
-        <button class="nav-item" data-view="coach">🎯 Coach · главный</button>
-        <button class="nav-item" data-view="train">🧠 Тесты</button>
-        <button class="nav-item" data-view="speak">🎤 Говори</button>
-        <button class="nav-item" data-view="pitch">🚀 Pitch</button>
-        <button class="nav-item" data-view="investor">🤝 Симуляция инвестора</button>
-        <button class="nav-item" data-view="roadmap">🗺️ Курс на 30 дней</button>
-        <button class="nav-item" data-view="org">🏢 Компания</button>
+        <button type="button" class="nav-item active" data-view="dashboard" aria-current="page">🏠 Главная</button>
+        <button type="button" class="nav-item" data-view="learn">📚 Изучение</button>
+        <button type="button" class="nav-item" data-view="coach">🎯 Coach · главный</button>
+        <button type="button" class="nav-item" data-view="train">🧠 Тесты</button>
+        <button type="button" class="nav-item" data-view="speak">🎤 Говори</button>
+        <button type="button" class="nav-item" data-view="pitch">🚀 Pitch</button>
+        <button type="button" class="nav-item" data-view="investor">🤝 Симуляция инвестора</button>
+        <button type="button" class="nav-item" data-view="roadmap">🗺️ Курс на 30 дней</button>
+        <button type="button" class="nav-item" data-view="org">🏢 Компания</button>
       </nav>
       <div class="sidebar-footer">
         <div class="mini-progress"><div id="sideProgress"></div></div>
@@ -43,12 +44,12 @@
       </div>
     </aside>
 
-    <main class="main">
+    <main class="main" id="mainContent" tabindex="-1">
       <header class="topbar">
         <button class="mobile-menu" id="mobileMenu" aria-label="Открыть меню" aria-controls="nav">☰</button>
         <div class="title-wrap">
           <div class="eyebrow">STARTUP & INVESTOR COACH</div>
-          <h1 id="pageTitle">Главная</h1>
+          <h1 id="pageTitle" tabindex="-1" aria-live="polite">Главная</h1>
         </div>
         <div class="topbar-actions">
           <button class="install-btn" id="installApp" type="button">Установить приложение</button>
@@ -57,24 +58,24 @@
         </div>
       </header>
 
-      <section id="view-dashboard" class="view active"></section>
-      <section id="view-learn" class="view"></section>
-      <section id="view-coach" class="view"></section>
-      <section id="view-train" class="view"></section>
-      <section id="view-speak" class="view"></section>
-      <section id="view-pitch" class="view"></section>
-      <section id="view-investor" class="view"></section>
-      <section id="view-roadmap" class="view"></section>
-      <section id="view-org" class="view"></section>
+      <section id="view-dashboard" class="view active" role="region" aria-label="Рабочая область" tabindex="-1"></section>
+      <section id="view-learn" class="view" role="region" aria-label="Рабочая область" tabindex="-1"></section>
+      <section id="view-coach" class="view" role="region" aria-label="Рабочая область" tabindex="-1"></section>
+      <section id="view-train" class="view" role="region" aria-label="Рабочая область" tabindex="-1"></section>
+      <section id="view-speak" class="view" role="region" aria-label="Рабочая область" tabindex="-1"></section>
+      <section id="view-pitch" class="view" role="region" aria-label="Рабочая область" tabindex="-1"></section>
+      <section id="view-investor" class="view" role="region" aria-label="Рабочая область" tabindex="-1"></section>
+      <section id="view-roadmap" class="view" role="region" aria-label="Рабочая область" tabindex="-1"></section>
+      <section id="view-org" class="view" role="region" aria-label="Рабочая область" tabindex="-1"></section>
     </main>
   </div>
 
   <nav class="bottom-nav" aria-label="Мобильная навигация">
-    <button class="bottom-nav-item active" data-view="dashboard"><span>⌂</span><small>Главная</small></button>
-    <button class="bottom-nav-item" data-view="learn"><span>▤</span><small>Учить</small></button>
-    <button class="bottom-nav-item" data-view="coach"><span>◎</span><small>Coach</small></button>
-    <button class="bottom-nav-item" data-view="investor"><span>◌</span><small>Инвестор</small></button>
-    <button class="bottom-nav-item" data-view="roadmap"><span>✓</span><small>Курс</small></button>
+    <button type="button" class="bottom-nav-item active" data-view="dashboard" aria-current="page"><span>⌂</span><small>Главная</small></button>
+    <button type="button" class="bottom-nav-item" data-view="learn"><span>▤</span><small>Учить</small></button>
+    <button type="button" class="bottom-nav-item" data-view="coach"><span>◎</span><small>Coach</small></button>
+    <button type="button" class="bottom-nav-item" data-view="investor"><span>◌</span><small>Инвестор</small></button>
+    <button type="button" class="bottom-nav-item" data-view="roadmap"><span>✓</span><small>Курс</small></button>
   </nav>
 
   <div id="installModal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="installModalTitle">

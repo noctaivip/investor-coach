@@ -35,3 +35,13 @@
 - [ ] Regional legal review completed
 
 Do not mark unchecked items as complete without operational or legal evidence.
+
+
+## v9.1 production-hardening evidence
+- [x] GitHub Actions quality gate for JavaScript/PWA/schema checks
+- [x] Dependency update monitoring configuration (Dependabot)
+- [x] Backend health and readiness endpoints
+- [x] Keyboard/ARIA/reduced-motion accessibility baseline
+- [ ] Independent WCAG 2.2 AA audit
+- [ ] External uptime alerting configured in the production account
+- [ ] Independent penetration test

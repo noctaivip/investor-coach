@@ -143,3 +143,19 @@ npx wrangler d1 execute investor-coach-production --remote --file=./migrations/0
 - `GET /api/account/reports/export?type=audit` — audit CSV, admin only.
 
 Report exports are written to the audit trail.
+
+## v9.1 — Health and readiness
+
+- `GET /healthz` → 200, если Worker выполняется.
+- `GET /readyz` → 200 только когда D1 отвечает и `OPENAI_API_KEY` настроен; иначе 503.
+
+Для uptime-monitoring используйте эти endpoints без авторизации. Они не раскрывают секреты или tenant data.
+
+
+## v9.2 — Observability / abuse protection / recovery
+
+- `X-Request-Id` response correlation.
+- Structured logs without request bodies or secrets.
+- Compatible `error_code` + `request_id`.
+- D1-backed rate limiting.
+- D1 backup/restore scripts and runbook.

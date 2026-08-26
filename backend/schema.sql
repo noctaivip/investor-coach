@@ -122,3 +122,14 @@ CREATE TABLE IF NOT EXISTS scim_tokens (
   FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS idx_scim_org_active ON scim_tokens(org_id,revoked_at);
+
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+  id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL,
+  subject_hash TEXT NOT NULL,
+  bucket INTEGER NOT NULL,
+  count INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limits_updated ON rate_limits(updated_at);
