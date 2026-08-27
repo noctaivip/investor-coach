@@ -104,13 +104,21 @@ function buildCoachTasks(t){const g=coachGuide(t),level=coachLevel(t.id),dec=coa
  return tasks}
 function startCoach(count=2){const chosen=coachPool().slice(0,Math.max(1,Math.min(2,count))),groups=chosen.map(buildCoachTasks),tasks=[],max=Math.max(...groups.map(g=>g.length));for(let step=0;step<max;step++)for(const group of groups)if(group[step])tasks.push(group[step]);coachSession={count:chosen.length,index:0,tasks,terms:chosen.map(t=>t.id),plan:state.coachPlan,day:coachDay(),answered:0,correct:0,mistakes:[]};state.coachRecent=[...state.coachRecent,...chosen.map(t=>t.id)].slice(-12);voiceBuffers.coach="";save();renderCoach();pushAppHistory("coach",{coachSession:true,coachIndex:0})}
 function coachRecordResult(task,ok){const s=coachStat(task.termId);s.seen=(s.seen||0)+1;s.last=today();coachSession.answered=(coachSession.answered||0)+1;if(ok){s.right=(s.right||0)+1;s.streak=(s.streak||0)+1;s.mastery=Math.min(100,(s.mastery||0)+8);s.nextReview=Date.now()+((s.mastery||0)>=70?3:1)*86400000;coachSession.correct=(coachSession.correct||0)+1}else{s.wrong=(s.wrong||0)+1;s.streak=0;s.mastery=Math.max(0,(s.mastery||0)-6);s.nextReview=Date.now()+20*60000;if(!coachSession.mistakes.includes(task.termId))coachSession.mistakes.push(task.termId)}updateSRS(task.termId,ok)}
-function coachAnswer(i){const task=coachSession?.tasks?.[coachSession.index];if(!task||["lesson","speech"].includes(task.type)||task.answered)return;task.selected=i;task.answered=true;coachRecordResult(task,i===task.answer);save();renderCoach();renderDashboard()}
+function answerValue(v){return String(v??"").trim().normalize("NFKC").replace(/\s+/g," ").toLocaleLowerCase("ru-RU")}
+function answerMatches(options,selected,answer){
+ const si=Number(selected),ai=Number(answer);
+ if(Number.isInteger(si)&&Number.isInteger(ai)&&si===ai)return true;
+ const selectedValue=Array.isArray(options)?answerValue(options[si]):"";
+ const correctValue=Array.isArray(options)?answerValue(options[ai]):"";
+ return !!selectedValue&&!!correctValue&&selectedValue===correctValue;
+}
+function coachAnswer(i){const task=coachSession?.tasks?.[coachSession.index];if(!task||["lesson","speech"].includes(task.type)||task.answered)return;task.selected=Number(i);task.answered=true;const ok=answerMatches(task.options,task.selected,task.answer);coachRecordResult(task,ok);save();renderCoach();renderDashboard()}
 function coachNext(){if(!coachSession)return;const task=coachSession.tasks[coachSession.index];if(task.type!=="lesson"&&!task.answered)return;if(task.type==="lesson"){const s=coachStat(task.termId);s.seen=(s.seen||0)+1;s.last=today();save()}coachSession.index++;voiceBuffers.coach="";renderCoach();pushAppHistory("coach",{coachSession:true,coachIndex:coachSession.index})}
 function coachBack(){if(history.state?.view==='coach'&&window.history.length>1){history.back();return}if(coachSession&&coachSession.index>0){coachSession.index--;voiceBuffers.coach="";renderCoach()}else{coachSession=null;renderCoach()}}
 function coachNextDay(){const p=coachPlan(),d=coachDay();state.coachPlanDays[state.coachPlan]=d>=p.days?1:d+1;save();coachSession=null;renderCoach();renderDashboard();pushAppHistory("coach",{coachSession:false})}
 function coachSpeechLocal(text,t){const low=(text||"").toLowerCase(),source=`${t.word} ${t.simple} ${t.why||""} ${t.investor||""}`.toLowerCase().replace(/[(),—]/g," "),keywords=[...new Set(source.split(/\s+/).filter(x=>x.length>5))],hits=keywords.filter(k=>low.includes(k)).length;let score=35+Math.min(35,hits*7)+(low.length>120?15:low.length>60?8:0)+(/\d/.test(low)?8:0);score=Math.min(100,score);return {score,feedback:score>=82?"Сильный ответ: смысл понятен и звучит применимо.":score>=68?"Смысл есть. Добавьте конкретику: цифру, период, сегмент или пример из бизнеса.":"Ответ пока слишком общий. Скажите: что означает термин → зачем инвестору → один конкретный пример."}}
 function coachTaskComment(task,t){const g=coachGuide(t);if(task.type==="meaning")return `Коротко: ${t.simple}`;if(task.type==="scenario")return `Это проверка применения: термин должен работать в реальной ситуации, а не только в определении.`;if(task.type==="investor")return `Инвестор проверяет: ${g.investorGoal}`;if(task.type==="usage")return `Рабочий контекст: ${g.use}`;if(task.type==="response")return `Профессиональный ответ строится как тезис → конкретика → доказательство. ${g.best}`;return t.simple}
-function coachFeedback(task,t){const ok=task.selected===task.answer;return `<div class="answer-result ${ok?'is-correct':'is-wrong'}"><strong>${ok?'Правильно':'Неправильно'}</strong></div>${!ok?`<div class="answer-line wrong-line"><span>Ваш ответ</span><strong>${safe(task.options[task.selected])}</strong></div>`:''}<div class="answer-line correct-line"><span>Правильный ответ</span><strong>${safe(task.options[task.answer])}</strong></div><div class="feedback lesson-feedback"><p><strong>Комментарий:</strong> ${safe(coachTaskComment(task,t))}</p></div>`}
+function coachFeedback(task,t){const ok=answerMatches(task.options,task.selected,task.answer);return `<div class="answer-result ${ok?'is-correct':'is-wrong'}"><strong>${ok?'Правильно':'Неправильно'}</strong></div>${!ok?`<div class="answer-line wrong-line"><span>Ваш ответ</span><strong>${safe(task.options[task.selected])}</strong></div>`:''}<div class="answer-line correct-line"><span>Правильный ответ</span><strong>${safe(task.options[task.answer])}</strong></div><div class="feedback lesson-feedback"><p><strong>Комментарий:</strong> ${safe(coachTaskComment(task,t))}</p></div>`}
 function coachPlanTabs(){return `<div class="filterbar coach-plan-tabs">${Object.entries(COACH_PLANS).map(([id,p])=>`<button class="${state.coachPlan===id?'active':''}" onclick="setCoachPlan('${id}')">${p.label}</button>`).join('')}</div>`}
 function coachBackButton(){return `<button class="btn secondary coach-back" onclick="coachBack()">← Назад</button>`}
 function coachTransferDone(){if(!coachSession)return;const task=coachSession.tasks?.[coachSession.index];if(!task||task.type!=="transfer"||task.answered)return;task.answered=true;const s=coachStat(task.termId);s.seen=(s.seen||0)+1;s.mastery=Math.min(100,(s.mastery||0)+4);s.nextReview=Date.now()+2*86400000;s.last=today();save();renderCoach()}
@@ -126,9 +134,9 @@ function renderCoach(){const root=$("#view-coach");if(!root)return;const p=coach
 let quizIndex=0,quizAnswered=false,lastAnswer=-1,currentQuiz=null;
 function buildQuizQueue(){const dueIds=new Set(dueTerms().map(t=>t.id));const weakIds=new Set(state.weak);return [...QUIZ].sort((a,b)=>(dueIds.has(b.termId)?3:0)+(weakIds.has(b.termId)?2:0)-((dueIds.has(a.termId)?3:0)+(weakIds.has(a.termId)?2:0)))}
 function getQuiz(){const q=buildQuizQueue();return q[quizIndex%q.length]}
-function quizFeedback(q){const t=term(q.termId);const ok=lastAnswer===q.a;return `<div class="answer-result ${ok?'is-correct':'is-wrong'}"><strong>${ok?'Правильно':'Неправильно'}</strong></div>${!ok?`<div class="answer-line wrong-line"><span>Ваш ответ</span><strong>${safe(q.options[lastAnswer])}</strong></div>`:''}<div class="answer-line correct-line"><span>Правильный ответ</span><strong>${safe(q.options[q.a])}</strong></div><div class="feedback lesson-feedback"><p><strong>Просто:</strong> ${safe(t?.simple||q.why)}</p><p><strong>Почему:</strong> ${safe(q.why)}</p>${t?.example?`<p><strong>Пример:</strong> ${safe(t.example)}</p>`:''}<p><strong>Где используется:</strong> ${safe(termUse(t))}</p></div>`}
-function renderTrain(){if(!currentQuiz)currentQuiz=getQuiz();const q=currentQuiz;$("#view-train").innerHTML=`<div class="quiz"><div class="row between"><span class="tag">ВОПРОС ${quizIndex+1}</span><span class="muted small">Выберите один ответ</span></div><div class="card quiz-card"><h2>${q.q}</h2><div>${q.options.map((o,i)=>`<button class="option ${quizAnswered?(i===q.a?'correct':i===lastAnswer?'wrong':''):''}" ${quizAnswered?'disabled':''} onclick="answerQuiz(${i})">${o}</button>`).join("")}</div>${quizAnswered?`${quizFeedback(q)}<button class="btn feedback-next" onclick="nextQuiz()">Следующий вопрос</button>`:""}</div></div>`}
-function answerQuiz(i){if(quizAnswered)return;const q=currentQuiz||getQuiz();currentQuiz=q;lastAnswer=i;quizAnswered=true;state.total++;const ok=i===q.a;if(ok)state.correct++;updateSRS(q.termId,ok);setDaily('review');save();renderTrain();renderDashboard()}
+function quizFeedback(q){const t=term(q.termId);const ok=answerMatches(q.options,lastAnswer,q.a);return `<div class="answer-result ${ok?'is-correct':'is-wrong'}"><strong>${ok?'Правильно':'Неправильно'}</strong></div>${!ok?`<div class="answer-line wrong-line"><span>Ваш ответ</span><strong>${safe(q.options[lastAnswer])}</strong></div>`:''}<div class="answer-line correct-line"><span>Правильный ответ</span><strong>${safe(q.options[q.a])}</strong></div><div class="feedback lesson-feedback"><p><strong>Просто:</strong> ${safe(t?.simple||q.why)}</p><p><strong>Почему:</strong> ${safe(q.why)}</p>${t?.example?`<p><strong>Пример:</strong> ${safe(t.example)}</p>`:''}<p><strong>Где используется:</strong> ${safe(termUse(t))}</p></div>`}
+function renderTrain(){if(!currentQuiz)currentQuiz=getQuiz();const q=currentQuiz;$("#view-train").innerHTML=`<div class="quiz"><div class="row between"><span class="tag">ВОПРОС ${quizIndex+1}</span><span class="muted small">Выберите один ответ</span></div><div class="card quiz-card"><h2>${q.q}</h2><div>${q.options.map((o,i)=>`<button class="option ${quizAnswered?(answerMatches(q.options,i,q.a)?'correct':Number(i)===Number(lastAnswer)?'wrong':''):''}" ${quizAnswered?'disabled':''} onclick="answerQuiz(${i})">${o}</button>`).join("")}</div>${quizAnswered?`${quizFeedback(q)}<button class="btn feedback-next" onclick="nextQuiz()">Следующий вопрос</button>`:""}</div></div>`}
+function answerQuiz(i){if(quizAnswered)return;const q=currentQuiz||getQuiz();currentQuiz=q;lastAnswer=Number(i);quizAnswered=true;state.total++;const ok=answerMatches(q.options,lastAnswer,q.a);if(ok)state.correct++;updateSRS(q.termId,ok);setDaily('review');save();renderTrain();renderDashboard()}
 function nextQuiz(){if(!quizAnswered)return;quizIndex++;quizAnswered=false;lastAnswer=-1;currentQuiz=null;renderTrain()}
 
 let speakTerm=TERMS[0];
@@ -675,7 +683,7 @@ coachAnswer=function(i){
  const task=coachSession?.tasks?.[coachSession.index],before=task?{...task}:null;
  _coachAnswerV12Brain(i);
  if(before&&["meaning","scenario","investor","usage","response"].includes(before.type)){
-  brainRecord(before,i===before.answer,i);save();
+  brainRecord(before,answerMatches(before.options,i,before.answer),i);save();
  }
 };
 const _coachTransferDoneV12Brain=coachTransferDone;
@@ -1530,7 +1538,7 @@ renderInvestor=function(){
 
 
 /* ===== Pilot Data Integrity + Session Resume v25 ===== */
-state.schemaVersion=26;
+state.schemaVersion=28;
 state.sessionRecovery=Object.assign({lastSavedAt:0,lastView:"dashboard"},state.sessionRecovery||{});
 
 function compactStateForStorage(){
@@ -1692,7 +1700,7 @@ function exportPilotMetrics(){
  const summary=pilotMetricSummary();
  const report={
   product:"Investor Coach",
-  schemaVersion:26,
+  schemaVersion:28,
   exportedAt:new Date().toISOString(),
   firstSeenAt:state.pilotMetrics.firstSeenAt,
   summary,
@@ -1761,7 +1769,7 @@ renderDashboard=function(){
  if(root&&!root.querySelector(".pilot-metrics-card"))root.insertAdjacentHTML("beforeend",pilotSummaryHtml());
 };
 
-pilotEvent("app_session_started",{version:"26.0.0"});
+pilotEvent("app_session_started",{version:"28.0.0"});
 let pilotSessionClosed=false;
 function closePilotSession(){
  if(pilotSessionClosed)return;
@@ -1770,3 +1778,17 @@ function closePilotSession(){
 }
 window.addEventListener("pagehide",closePilotSession,{once:true});
 try{renderDashboard()}catch{}
+
+/* ===== Answer Evaluation Integrity v28 ===== */
+function answerEvaluationSelfTest(){
+ const cases=[
+  {options:["CAC","Retention","ARR"],selected:1,answer:1,want:true},
+  {options:["CAC","Retention","ARR"],selected:1,answer:"1",want:true},
+  {options:["CAC","Retention","ARR"],selected:1,answer:2,want:false},
+  {options:["CAC","Retention","ARR"],selected:1,answer:0,want:false},
+  {options:["CAC","Retention","ARR"],selected:2,answer:1,want:false},
+  {options:["Retention","Retention","ARR"],selected:1,answer:0,want:true},
+  {options:[" retention ","CAC","ARR"],selected:0,answer:0,want:true}
+ ];
+ return cases.every(c=>answerMatches(c.options,c.selected,c.answer)===c.want);
+}

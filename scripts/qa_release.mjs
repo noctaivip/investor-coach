@@ -4,7 +4,7 @@ const read=p=>fs.readFileSync(p,"utf8");
 const app=read("app.js"),sw=read("sw.js"),data=read("data.js");
 const manifest=JSON.parse(read("manifest.json"));
 if(manifest.display!=="standalone")fail("manifest.display must be standalone");
-for(const v of ["27.0.0"]){
+for(const v of ["28.0.0"]){
  if(!sw.includes(v))fail("SW version mismatch");
  if(!read("config.js").includes(v))fail("config version mismatch");
 }
@@ -25,11 +25,14 @@ if((app.match(/window\.addEventListener\(["']popstate/g)||[]).length!==1)fail("m
 if(!app.includes("Pilot Instrumentation v26"))fail("pilot instrumentation missing");
 if(!app.includes("pilotSessionMinutes"))fail("pilot session duration metric missing");
 if(!app.includes("pilotCoachAccuracy"))fail("pilot Coach accuracy metric missing");
-if(!app.includes("schemaVersion=26"))fail("state schema version mismatch");
+if(!app.includes("schemaVersion=28"))fail("state schema version mismatch");
 if(!app.includes("pilotMetricSummary"))fail("pilot summary missing");
 if(!app.includes("exportPilotMetrics"))fail("pilot report export missing");
 if(!app.includes('pilotEvent("coach_answer"'))fail("Coach instrumentation missing");
 if(!app.includes('pilotEvent("ai_evaluation"'))fail("AI evaluation instrumentation missing");
 if(app.includes('pilotEvent("ai_evaluation",{mode:String(mode||""),score,userText'))fail("pilot telemetry must not store transcript text");
 
-if(!process.exitCode)console.log("OK: Investor Coach v27 release QA invariants passed.");
+if(!process.exitCode)console.log("OK: Investor Coach v28 release QA invariants passed.");
+
+if(!app.includes("Answer Evaluation Integrity v28"))fail("v28 answer integrity layer missing");
+if(!app.includes("answerEvaluationSelfTest"))fail("answer self-test missing");
