@@ -129,3 +129,41 @@ textarea{width:100%;min-height:150px;border:1px solid var(--line);border-radius:
 @keyframes livePulse{50%{opacity:.45}}
 @media(max-width:900px){.live-investor-shell{grid-template-columns:1fr}.live-investor-side{grid-template-columns:1fr 1fr}.live-side-card.ai-connect{grid-column:1/-1}}
 @media(max-width:600px){#view-investor{padding-bottom:92px}.live-investor-shell{display:block}.live-investor-main{border-radius:0;border-left:0;border-right:0;box-shadow:none}.live-investor-top{padding:17px 18px 12px}.live-investor-top h2{font-size:22px}.live-investor-top p{font-size:13px}.live-session-state{display:none}.live-scenario-tabs{padding:0 18px 14px}.live-scenario-tabs button{padding:9px 12px}.live-chat{min-height:42vh;max-height:49vh;padding:18px 14px}.live-message>div:last-child{max-width:86%}.live-bubble{font-size:15px;padding:12px 14px}.live-composer{margin:12px 12px 8px;padding:12px}.live-record-head{align-items:flex-start}.live-privacy{max-width:150px;text-align:right}.live-composer-actions{display:grid;grid-template-columns:1fr auto}.live-mic{padding:12px 10px}.live-send{padding:12px 14px}.live-chat-footer{padding:2px 15px 14px}.live-chat-footer span{display:none}.live-investor-side{display:grid;grid-template-columns:1fr;margin-top:12px}.live-side-card{border-radius:18px;margin:0 12px;box-shadow:none}}
+
+
+/* ===== Live Dialogue Reliability v21 ===== */
+.live-composer.is-busy{opacity:.82;pointer-events:none}.live-composer button:disabled{cursor:wait;opacity:.62}
+.live-transcript strong{color:#20283a}.live-bubble:focus{outline:2px solid #7775ef;outline-offset:2px}
+@media(max-width:600px){.live-investor-top{position:sticky;top:0;z-index:3;background:rgba(255,255,255,.96);backdrop-filter:blur(10px)}.live-chat{overscroll-behavior:contain}}
+
+
+/* ===== Final Voice Note Flow v22 ===== */
+.live-composer.is-prepared{border-color:#6b6ae8;background:linear-gradient(180deg,#fff,#fafaff)}
+.live-composer.is-prepared .live-dot{background:#5d5ce8;box-shadow:0 0 0 5px rgba(93,92,232,.09)}
+.live-mic:disabled,.live-send:disabled{filter:saturate(.7)}
+@media(max-width:600px){
+ .live-composer{position:sticky;bottom:74px;z-index:5;box-shadow:0 -8px 28px rgba(17,24,39,.08)}
+ .live-investor-side{padding-bottom:8px}
+}
+
+
+/* ===== Adaptive Learning Loop v23 ===== */
+.meeting-report{margin:18px 22px 22px;padding:18px;border:1px solid #dfe3ef;border-radius:20px;background:#fff}
+.meeting-report-head{display:flex;justify-content:space-between;gap:14px;align-items:center}.meeting-report-head h3{font-size:28px;margin:5px 0}
+.meeting-report-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}.meeting-report-grid>div{background:#f7f8fb;border-radius:14px;padding:14px}.meeting-report-grid ul{padding-left:18px;margin:8px 0 0}.meeting-report-grid li{margin:5px 0;line-height:1.4}
+.adaptive-focus{margin:0 0 12px;padding:11px 12px;border-radius:13px;background:#f4f4ff;color:#34345f;font-size:12px}.adaptive-focus span{color:#6d7083}
+@media(max-width:600px){.meeting-report{margin:12px}.meeting-report-head{align-items:flex-start;flex-direction:column}.meeting-report-grid{grid-template-columns:1fr}}
+
+
+/* ===== Network + Session Reliability v24 ===== */
+.transport-badge{display:inline-flex;margin-left:8px;vertical-align:middle;padding:5px 8px;border-radius:999px;background:#f1f3f7;color:#6a7281;font-size:10px;font-weight:800}.transport-badge.ok{background:#edf8f1;color:#267a46}.transport-badge.warn,.transport-badge.off{background:#fff3ee;color:#a34a2d}
+
+
+/* ===== Pilot Data Integrity + Session Resume v25 ===== */
+.session-resume{margin:14px 22px 0;padding:10px 13px;border-radius:14px;background:#f4f6fb;color:#30394a;display:flex;justify-content:space-between;gap:12px;font-size:12px}.session-resume span{color:#737c8d}
+@media(max-width:600px){.session-resume{margin:10px 12px 0;display:block}.session-resume span{display:block;margin-top:3px}}
+
+
+/* ===== Pilot Instrumentation v26 ===== */
+.pilot-metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:15px 0}.pilot-metrics-grid>div{background:#f7f8fb;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:3px}.pilot-metrics-grid strong{font-size:23px}.pilot-metrics-grid span{font-size:11px;color:#737c8c}.pilot-metrics-foot{display:flex;gap:14px;flex-wrap:wrap;padding-top:3px}.pilot-metrics-foot span{font-size:12px;color:#6f7787}
+@media(max-width:600px){.pilot-metrics-grid{grid-template-columns:1fr 1fr}.pilot-metrics-card>.row{align-items:flex-start}.pilot-metrics-card>.row .btn{width:auto}}

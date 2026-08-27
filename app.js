@@ -3,7 +3,7 @@ const state=Object.assign({},DEFAULT_STATE,JSON.parse(localStorage.getItem("inve
 state.learned=state.learned||{};state.weak=state.weak||[];state.srs=state.srs||{};state.daily=state.daily||{};state.messages=state.messages||[];state.pitchScores=state.pitchScores||[];state.voiceScores=state.voiceScores||[];
 state.coachStats=state.coachStats||{};state.coachPlan=["7","14","30"].includes(state.coachPlan)?state.coachPlan:"30";state.coachPlanDays=state.coachPlanDays||{"7":state.coachDay||1,"30":1};state.coachRecent=Array.isArray(state.coachRecent)?state.coachRecent.slice(-12):[];
 const $=s=>document.querySelector(s);const $$=s=>[...document.querySelectorAll(s)];
-const save=()=>localStorage.setItem("investorCoachState",JSON.stringify(state));
+let save=()=>localStorage.setItem("investorCoachState",JSON.stringify(state));
 const toast=m=>{const t=$("#toast");if(!t)return;t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200)};
 const pct=(a,b)=>b?Math.round(a/b*100):0;const term=id=>TERMS.find(x=>x.id===id);const today=()=>new Date().toISOString().slice(0,10);
 const CATEGORY_ORDER=["Метрики","Рынок","Финансы","Фандрайзинг","Рост","Бизнес","Коммуникация","Право"];
@@ -1150,3 +1150,623 @@ startInvestorScenario=function(id){
  _startInvestorScenarioV20(id);
  state.liveDialogue={started:true,scenario:id};save();
 };
+
+
+/* ===== Live Dialogue Reliability v21 ===== */
+state.liveVoice=Object.assign({busy:false,lastTranscript:"",lastError:"",startedAt:0},state.liveVoice||{});
+
+function setLiveVoiceBusy(busy,label){
+ state.liveVoice.busy=!!busy;save();
+ const wrap=document.querySelector("#voice-sim"),send=wrap?.querySelector(".live-send"),mic=document.querySelector("#voiceStart-sim"),st=document.querySelector("#voiceStatus-sim");
+ if(wrap)wrap.classList.toggle("is-busy",!!busy);
+ if(send)send.disabled=!!busy;
+ if(mic)mic.disabled=!!busy;
+ if(st&&label)st.textContent=label;
+}
+function liveRecordingSeconds(){return mediaState.startedAt?Math.max(0,Math.floor((Date.now()-mediaState.startedAt)/1000)):0}
+function stopLiveTracks(){try{mediaState.stream?.getTracks?.().forEach(t=>t.stop())}catch(_){}}
+function liveVoiceError(message){
+ state.liveVoice.lastError=String(message||"");state.liveVoice.busy=false;save();setLiveVoiceBusy(false,"Не отправлено");
+ const el=document.querySelector("#voiceTranscript-sim");if(el)el.innerHTML=`<strong>Запись сохранена в этой сессии.</strong><br>${safe(message||"Повторите отправку.")}`;
+}
+function liveRecorderHtml(){
+ const connected=aiReady(),recording=!!(mediaState.recorder&&mediaState.ch==="sim"&&mediaState.recorder.state==="recording"),busy=!!state.liveVoice.busy;
+ return `<div class="live-composer ${recording?'is-recording':''} ${busy?'is-busy':''}" id="voice-sim">
+   <div class="live-record-head"><div><span class="live-dot"></span><strong id="voiceStatus-sim">${busy?'Обрабатываю ответ…':recording?'Запись идёт':'Готов к ответу'}</strong></div><span class="live-privacy">${connected?'Отправка только после нажатия кнопки':'Для точной речи нужен production AI'}</span></div>
+   <div class="live-transcript" id="voiceTranscript-sim">${voiceBuffers.sim?safe(voiceBuffers.sim):'Говорите обычным темпом. Можно делать паузы — запись не отправится сама.'}</div>
+   <div class="live-composer-actions"><button class="live-mic" id="voiceStart-sim" onclick="toggleVoice('sim')" ${busy?'disabled':''}><span>●</span> ${recording?'Запись идёт':'Записать ответ'}</button><button class="live-send" onclick="submitVoice('sim')" ${busy?'disabled':''}>${busy?'Обработка…':'Отправить'} <span>↑</span></button></div>
+ </div>`;
+}
+
+const _submitVoiceV21=submitVoice;
+submitVoice=async function(ch){
+ if(ch!=="sim")return _submitVoiceV21(ch);
+ if(state.liveVoice.busy)return;
+ const rec=mediaState.recorder;
+ if(aiReady()&&rec&&mediaState.ch===ch&&(rec.state==="recording"||rec.state==="paused")){
+   if(liveRecordingSeconds()<1){toast("Скажите ответ перед отправкой.");return}
+   setLiveVoiceBusy(true,"Завершаю запись…");
+   try{
+     const done=new Promise((resolve,reject)=>{
+       const timer=setTimeout(()=>reject(new Error("RECORDER_STOP_TIMEOUT")),5000);
+       rec.addEventListener("stop",()=>{clearTimeout(timer);resolve()},{once:true});
+     });
+     if(rec.state==="paused")rec.resume();rec.stop();await done;
+     const chunks=[...mediaState.chunks],mime=rec.mimeType||"audio/webm",blob=new Blob(chunks,{type:mime});
+     if(blob.size<1000)throw new Error("Запись слишком короткая.");
+     if(blob.size>23*1024*1024)throw new Error("Запись слишком длинная. Отправьте ответ короче.");
+     setLiveVoiceBusy(true,"Точно распознаю речь…");
+     const text=await transcribeBlob(blob);
+     if(!text)throw new Error("Речь не распознана. Попробуйте ещё раз.");
+     voiceBuffers.sim=text;state.liveVoice.lastTranscript=text;state.liveVoice.lastError="";save();
+     const el=document.querySelector("#voiceTranscript-sim");if(el)el.textContent=text;
+     setLiveVoiceBusy(true,"Инвестор анализирует ответ…");
+     await evaluateWithAI("sim",text);
+   }catch(e){
+     console.error(e);liveVoiceError(e.message==="TRANSCRIBE_502"?"Сервис распознавания временно недоступен. Повторите отправку.":e.message);
+   }finally{
+     stopLiveTracks();mediaState.recorder=null;mediaState.stream=null;mediaState.chunks=[];voiceRunning=false;state.liveVoice.busy=false;save();
+   }
+   return;
+ }
+ if(!aiReady()){toast("Для живого диалога подключите production AI.");return}
+ if(voiceBuffers.sim.trim()){
+   setLiveVoiceBusy(true,"Инвестор анализирует ответ…");
+   try{await evaluateWithAI("sim",voiceBuffers.sim.trim())}finally{state.liveVoice.busy=false;save()}
+ }else toast("Сначала запишите ответ.");
+};
+
+const _startMediaVoiceV21=startMediaVoice;
+startMediaVoice=async function(ch){
+ if(ch!=="sim")return _startMediaVoiceV21(ch);
+ if(state.liveVoice.busy)return;
+ voiceBuffers.sim="";state.liveVoice.lastError="";state.liveVoice.startedAt=Date.now();save();
+ return _startMediaVoiceV21(ch);
+};
+
+const _renderInvestorV21=renderInvestor;
+renderInvestor=function(){
+ _renderInvestorV21();
+ const chat=document.querySelector("#simChat");
+ if(chat){
+   chat.setAttribute("aria-live","polite");
+   chat.querySelectorAll(".live-bubble").forEach(x=>x.setAttribute("tabindex","0"));
+ }
+};
+
+
+/* ===== Final Voice Note Flow v22 ===== */
+let livePreparedBlob=null,liveRecordTimer=null,livePreparedSeconds=0;
+
+function clearLiveRecordTimer(){if(liveRecordTimer){clearInterval(liveRecordTimer);liveRecordTimer=null}}
+function formatLiveSeconds(sec){const s=Math.max(0,Number(sec)||0);return `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`}
+function refreshLiveRecordClock(){
+ const rec=mediaState.recorder,st=document.querySelector("#voiceStatus-sim");
+ if(rec&&rec.state==="recording"&&st)st.textContent=`Запись идёт · ${formatLiveSeconds(liveRecordingSeconds())}`;
+}
+function beginLiveRecordClock(){clearLiveRecordTimer();refreshLiveRecordClock();liveRecordTimer=setInterval(refreshLiveRecordClock,500)}
+function clearPreparedVoice(){
+ livePreparedBlob=null;livePreparedSeconds=0;
+ if(mediaState.ch==="sim"){mediaState.chunks=[];mediaState.recorder=null;mediaState.stream=null}
+}
+async function stopLiveRecordingOnly(){
+ const rec=mediaState.recorder;
+ if(!rec||mediaState.ch!=="sim"||!["recording","paused"].includes(rec.state))return false;
+ try{
+  const seconds=Math.max(1,liveRecordingSeconds());
+  const done=new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>reject(new Error("RECORDER_STOP_TIMEOUT")),5000);
+   rec.addEventListener("stop",()=>{clearTimeout(timer);resolve()},{once:true});
+  });
+  if(rec.state==="paused")rec.resume();
+  rec.stop();await done;clearLiveRecordTimer();
+  const blob=new Blob([...mediaState.chunks],{type:rec.mimeType||"audio/webm"});
+  stopLiveTracks();mediaState.stream=null;mediaState.recorder=null;voiceRunning=false;
+  if(blob.size<1000){clearPreparedVoice();throw new Error("Запись слишком короткая.")}
+  if(blob.size>23*1024*1024){clearPreparedVoice();throw new Error("Запись слишком длинная. Запишите ответ короче.")}
+  livePreparedBlob=blob;livePreparedSeconds=seconds;
+  state.liveVoice.lastError="";save();
+  setLiveVoiceBusy(false,`Запись готова · ${formatLiveSeconds(seconds)}`);
+  const el=document.querySelector("#voiceTranscript-sim");
+  if(el)el.textContent=`Голосовой ответ ${formatLiveSeconds(seconds)} готов. Нажмите «Отправить» или запишите заново.`;
+  const btn=document.querySelector("#voiceStart-sim");
+  if(btn)btn.innerHTML="<span>●</span> Записать заново";
+  return true;
+ }catch(e){
+  clearLiveRecordTimer();stopLiveTracks();mediaState.recorder=null;mediaState.stream=null;voiceRunning=false;
+  liveVoiceError(e.message);return false;
+ }
+}
+
+const _toggleVoiceV22=toggleVoice;
+toggleVoice=async function(ch){
+ if(ch!=="sim")return _toggleVoiceV22(ch);
+ if(state.liveVoice.busy)return;
+ const rec=mediaState.recorder;
+ if(rec&&mediaState.ch==="sim"&&["recording","paused"].includes(rec.state)){
+  await stopLiveRecordingOnly();
+  return;
+ }
+ clearPreparedVoice();voiceBuffers.sim="";
+ await startMediaVoice("sim");
+ if(mediaState.recorder?.state==="recording")beginLiveRecordClock();
+};
+
+const _startMediaVoiceV22=startMediaVoice;
+startMediaVoice=async function(ch){
+ if(ch!=="sim")return _startMediaVoiceV22(ch);
+ clearPreparedVoice();
+ const result=await _startMediaVoiceV22(ch);
+ if(mediaState.recorder?.state==="recording")beginLiveRecordClock();
+ return result;
+};
+
+submitVoice=async function(ch){
+ if(ch!=="sim")return _submitVoiceV21(ch);
+ if(state.liveVoice.busy)return;
+
+ if(mediaState.recorder&&mediaState.ch==="sim"&&["recording","paused"].includes(mediaState.recorder.state)){
+  setLiveVoiceBusy(true,"Завершаю запись…");
+  const ok=await stopLiveRecordingOnly();
+  if(!ok){state.liveVoice.busy=false;save();return}
+ }
+
+ const blob=livePreparedBlob;
+ if(!aiReady()){toast("Для живого диалога подключите production AI.");return}
+ if(!blob){
+  if(voiceBuffers.sim.trim()){
+   setLiveVoiceBusy(true,"Инвестор анализирует ответ…");
+   try{await evaluateWithAI("sim",voiceBuffers.sim.trim())}
+   finally{state.liveVoice.busy=false;save()}
+   return;
+  }
+  toast("Сначала запишите голосовой ответ.");return;
+ }
+
+ setLiveVoiceBusy(true,"Точно распознаю речь…");
+ try{
+  const text=await transcribeBlob(blob);
+  if(!text)throw new Error("Речь не распознана. Попробуйте ещё раз.");
+  voiceBuffers.sim=text;state.liveVoice.lastTranscript=text;state.liveVoice.lastError="";save();
+  const el=document.querySelector("#voiceTranscript-sim");if(el)el.textContent=text;
+  setLiveVoiceBusy(true,"Инвестор анализирует ответ…");
+  await evaluateWithAI("sim",text);
+  clearPreparedVoice();
+ }catch(e){
+  console.error(e);
+  liveVoiceError(e.message==="TRANSCRIBE_502"?"Сервис распознавания временно недоступен. Запись сохранена — повторите отправку.":e.message);
+ }finally{
+  clearLiveRecordTimer();state.liveVoice.busy=false;save();
+ }
+};
+
+liveRecorderHtml=function(){
+ const connected=aiReady(),recording=!!(mediaState.recorder&&mediaState.ch==="sim"&&mediaState.recorder.state==="recording"),busy=!!state.liveVoice.busy,prepared=!!livePreparedBlob;
+ return `<div class="live-composer ${recording?'is-recording':''} ${busy?'is-busy':''} ${prepared?'is-prepared':''}" id="voice-sim">
+   <div class="live-record-head"><div><span class="live-dot"></span><strong id="voiceStatus-sim">${busy?'Обрабатываю ответ…':recording?`Запись идёт · ${formatLiveSeconds(liveRecordingSeconds())}`:prepared?`Запись готова · ${formatLiveSeconds(livePreparedSeconds)}`:'Готов к ответу'}</strong></div><span class="live-privacy">${connected?'Ничего не отправляется без «Отправить»':'Для точной речи нужен production AI'}</span></div>
+   <div class="live-transcript" id="voiceTranscript-sim">${voiceBuffers.sim?safe(voiceBuffers.sim):prepared?`Голосовой ответ ${formatLiveSeconds(livePreparedSeconds)} готов к отправке.`:'Говорите обычным темпом. Можно делать паузы.'}</div>
+   <div class="live-composer-actions"><button class="live-mic" id="voiceStart-sim" onclick="toggleVoice('sim')" ${busy?'disabled':''}><span>●</span> ${recording?'Остановить':prepared?'Записать заново':'Записать ответ'}</button><button class="live-send" onclick="submitVoice('sim')" ${busy?'disabled':''}>${busy?'Обработка…':'Отправить'} <span>↑</span></button></div>
+ </div>`;
+};
+
+const _renderInvestorV22=renderInvestor;
+renderInvestor=function(){
+ _renderInvestorV22();
+ const composer=document.querySelector("#voice-sim");
+ if(composer&&livePreparedBlob){
+  composer.classList.add("is-prepared");
+  const st=document.querySelector("#voiceStatus-sim");if(st)st.textContent=`Запись готова · ${formatLiveSeconds(livePreparedSeconds)}`;
+ }
+};
+
+window.addEventListener("pagehide",()=>{clearLiveRecordTimer();stopLiveTracks()});
+
+
+/* ===== Adaptive Learning Loop v23 ===== */
+state.adaptiveLoop=Object.assign({gaps:{},meetingReports:[],lastRecommendation:null},state.adaptiveLoop||{});
+
+function adaptiveGapKey(res){
+ const raw=(res?.focus_topics||[])[0]||state.aiWeakTopics?.[0]||"communication";
+ return String(raw).slice(0,80);
+}
+function recordAdaptiveGap(res,score){
+ const gap=String(res?.learning_gap||"none"),key=adaptiveGapKey(res);
+ if(gap==="none"&&score>=80)return;
+ const id=`${key}:${gap}`;
+ const prev=state.adaptiveLoop.gaps[id]||{topic:key,gap,count:0,lastScore:100,reason:"",updatedAt:0};
+ prev.count+=1;prev.lastScore=score;prev.reason=String(res?.learning_gap_reason||res?.verdict||"").slice(0,300);prev.updatedAt=Date.now();
+ state.adaptiveLoop.gaps[id]=prev;
+ state.adaptiveLoop.lastRecommendation={topic:key,gap,reason:prev.reason,nextDrill:res?.next_drill||"coach"};
+}
+function adaptiveRecommendation(){
+ const rows=Object.values(state.adaptiveLoop.gaps||{}).sort((a,b)=>(b.count*12+(100-b.lastScore))-(a.count*12+(100-a.lastScore)));
+ return rows[0]||null;
+}
+function buildMeetingReport(res){
+ const scores=state.simSession?.scores||[],avg=scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length):Number(res?.score||0);
+ const dims=res?.dimensions||{},weak=Object.entries(dims).filter(([,v])=>Number.isFinite(Number(v))).sort((a,b)=>a[1]-b[1]).slice(0,2);
+ const report={at:Date.now(),scenario:state.simScenario,score:avg,summary:String(res?.session_summary||res?.verdict||""),strengths:(res?.strengths||[]).slice(0,3),improvements:(res?.improvements||[]).slice(0,3),contradictions:(res?.contradictions||[]).slice(0,4),redFlags:(res?.red_flags||[]).slice(0,4),weakSkills:weak,modelAnswer:String(res?.model_answer||""),nextDrill:res?.next_drill||"coach",gap:res?.learning_gap||"none",gapReason:res?.learning_gap_reason||""};
+ state.adaptiveLoop.meetingReports.unshift(report);state.adaptiveLoop.meetingReports=state.adaptiveLoop.meetingReports.slice(0,12);save();return report;
+}
+function meetingReportHtml(report){
+ if(!report)return "";
+ const labels={directness:"Прямота",clarity:"Ясность",evidence:"Доказательства",metrics:"Метрики",terminology:"Терминология",risk_handling:"Работа с риском",structure:"Структура"};
+ return `<div class="meeting-report"><div class="meeting-report-head"><div><span class="tag">РАЗБОР ВСТРЕЧИ</span><h3>${safe(report.score)}/100</h3></div><button class="btn" onclick="openAdaptiveTraining()">Тренировать слабое место</button></div>
+ ${report.summary?`<p>${safe(report.summary)}</p>`:""}
+ <div class="meeting-report-grid"><div><strong>Что уже хорошо</strong>${report.strengths.length?`<ul>${report.strengths.map(x=>`<li>${safe(x)}</li>`).join("")}</ul>`:"<p>Нужна дополнительная практика.</p>"}</div>
+ <div><strong>Исправить в первую очередь</strong>${report.improvements.length?`<ul>${report.improvements.map(x=>`<li>${safe(x)}</li>`).join("")}</ul>`:"<p>Критичных замечаний нет.</p>"}</div></div>
+ ${report.weakSkills.length?`<p class="small"><strong>Слабые навыки:</strong> ${report.weakSkills.map(([k,v])=>`${safe(labels[k]||k)} ${safe(v)}/100`).join(" · ")}</p>`:""}
+ ${report.contradictions.length?`<p><strong>Противоречия:</strong> ${report.contradictions.map(safe).join(" • ")}</p>`:""}
+ ${report.redFlags.length?`<p><strong>Red flags:</strong> ${report.redFlags.map(safe).join(" • ")}</p>`:""}
+ ${report.modelAnswer?`<details><summary>Сильный вариант последнего ответа</summary><p>${safe(report.modelAnswer)}</p></details>`:""}</div>`;
+}
+function openAdaptiveTraining(){
+ const r=adaptiveRecommendation();
+ if(r){state.aiWeakTopics=[r.topic,...state.aiWeakTopics.filter(x=>x!==r.topic)].slice(0,20);save()}
+ go("coach");
+}
+const _applyAiResultV23=applyAiResult;
+applyAiResult=function(res,mode,userText){
+ const score=_applyAiResultV23(res,mode,userText);
+ recordAdaptiveGap(res,score);
+ if(mode==="sim"&&res?.session_complete)buildMeetingReport(res);
+ save();return score;
+};
+
+const _simulatorSummaryHtmlV23=simulatorSummaryHtml;
+simulatorSummaryHtml=function(){
+ const base=_simulatorSummaryHtmlV23();
+ const report=state.adaptiveLoop.meetingReports?.[0];
+ return `${base}${report?meetingReportHtml(report):""}`;
+};
+
+const _liveTermsHtmlV23=liveTermsHtml;
+liveTermsHtml=function(){
+ const rec=adaptiveRecommendation();
+ const base=_liveTermsHtmlV23();
+ return `${rec?`<div class="adaptive-focus"><strong>Текущий пробел:</strong> ${safe(rec.topic)}<br><span>${safe(rec.reason||"Нужно закрепить применение в речи.")}</span></div>`:""}${base}`;
+};
+
+
+/* ===== Network + Session Reliability v24 ===== */
+state.aiTransport=Object.assign({lastReadyAt:0,lastReady:false,lastError:""},state.aiTransport||{});
+state.adaptiveLoop.lastSimResult=state.adaptiveLoop.lastSimResult||null;
+
+function waitMs(ms){return new Promise(r=>setTimeout(r,ms))}
+function retryableStatus(status){return [408,425,429,500,502,503,504].includes(Number(status))}
+async function fetchWithTimeoutRetry(url,options={},timeoutMs=45000,retries=1){
+ let lastError=null;
+ for(let attempt=0;attempt<=retries;attempt++){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+   const r=await fetch(url,{...options,signal:controller.signal});
+   clearTimeout(timer);
+   if(r.ok||!retryableStatus(r.status)||attempt===retries)return r;
+   lastError=new Error(`HTTP_${r.status}`);
+  }catch(e){
+   clearTimeout(timer);lastError=e;
+   if(attempt===retries)throw e;
+  }
+  await waitMs(500*(attempt+1));
+ }
+ throw lastError||new Error("NETWORK_ERROR");
+}
+async function checkAiBackend(force=false){
+ if(!aiReady())return false;
+ if(!force&&Date.now()-Number(state.aiTransport.lastReadyAt||0)<120000)return !!state.aiTransport.lastReady;
+ try{
+  const r=await fetchWithTimeoutRetry(apiBase()+"/readyz",{method:"GET"},8000,0);
+  state.aiTransport.lastReady=r.ok;state.aiTransport.lastReadyAt=Date.now();state.aiTransport.lastError=r.ok?"":`HTTP_${r.status}`;
+ }catch(e){
+  state.aiTransport.lastReady=false;state.aiTransport.lastReadyAt=Date.now();state.aiTransport.lastError=String(e?.name==="AbortError"?"TIMEOUT":e?.message||e);
+ }
+ save();return state.aiTransport.lastReady;
+}
+
+aiCoach=async function(mode,text,extra={}){
+ if(!aiReady())throw new Error("AI_NOT_CONFIGURED");
+ const payload={mode,transcript:text,memory:state.aiMemory,history:state.aiHistory.slice(-12),weak_topics:state.aiWeakTopics.slice(0,12),course_day:state.day,project_profile:state.projectProfile,context:extra};
+ const r=await fetchWithTimeoutRetry(apiBase()+"/api/coach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)},50000,1);
+ if(!r.ok){const e=await r.text();throw new Error("AI "+r.status+": "+e.slice(0,180))}
+ return r.json();
+};
+
+transcribeBlob=async function(blob){
+ if(!aiReady())throw new Error("AI_NOT_CONFIGURED");
+ let last=null;
+ for(let attempt=0;attempt<2;attempt++){
+  const fd=new FormData(),ext=blob.type.includes("mp4")?"m4a":"webm";
+  fd.append("file",blob,"answer."+ext);fd.append("language","ru");
+  fd.append("context",JSON.stringify({scenario:state.simScenario,memory:state.aiMemory||"",terms:TERMS.map(t=>t.word).slice(0,120)}));
+  try{
+   const r=await fetchWithTimeoutRetry(apiBase()+"/api/transcribe",{method:"POST",body:fd},65000,0);
+   if(r.ok){const j=await r.json();return normalizeTranscript(j.text||"")}
+   last=new Error("TRANSCRIBE_"+r.status);
+   if(!retryableStatus(r.status))throw last;
+  }catch(e){last=e;if(attempt===1)throw e}
+  await waitMs(650);
+ }
+ throw last||new Error("TRANSCRIBE_FAILED");
+};
+
+const _startMediaVoiceV24=startMediaVoice;
+startMediaVoice=async function(ch){
+ if(ch==="sim"&&aiReady())checkAiBackend(false).then(ok=>{if(!ok&&!voiceRunning)toast("AI backend сейчас недоступен. Запись можно сделать, но отправка может потребовать повторной попытки.")}).catch(()=>{});
+ return _startMediaVoiceV24(ch);
+};
+
+const _applyAiResultV24=applyAiResult;
+applyAiResult=function(res,mode,userText){
+ if(mode==="sim")state.adaptiveLoop.lastSimResult=res;
+ return _applyAiResultV24(res,mode,userText);
+};
+
+const _evaluateWithAIV24=evaluateWithAI;
+evaluateWithAI=async function(ch,text){
+ const wasComplete=!!state.simSession?.complete;
+ const reportCount=state.adaptiveLoop?.meetingReports?.length||0;
+ const result=await _evaluateWithAIV24(ch,text);
+ if(ch==="sim"&&!state.exam?.active&&!wasComplete&&state.simSession?.complete){
+  const currentCount=state.adaptiveLoop?.meetingReports?.length||0;
+  if(currentCount===reportCount&&state.adaptiveLoop.lastSimResult){
+   buildMeetingReport({...state.adaptiveLoop.lastSimResult,session_complete:true,session_summary:state.simSession.summary||state.adaptiveLoop.lastSimResult.session_summary||state.adaptiveLoop.lastSimResult.verdict||""});
+   save();renderInvestor();renderDashboard();
+  }
+ }
+ return result;
+};
+
+function aiTransportBadge(){
+ if(!aiReady())return `<span class="transport-badge off">AI не подключён</span>`;
+ if(!state.aiTransport.lastReadyAt)return `<span class="transport-badge">AI</span>`;
+ return `<span class="transport-badge ${state.aiTransport.lastReady?'ok':'warn'}">${state.aiTransport.lastReady?'AI online':'AI недоступен'}</span>`;
+}
+const _renderInvestorV24=renderInvestor;
+renderInvestor=function(){
+ _renderInvestorV24();
+ const top=document.querySelector(".live-investor-top .tag");
+ if(top&&!document.querySelector(".transport-badge"))top.insertAdjacentHTML("afterend",aiTransportBadge());
+};
+
+
+/* ===== Pilot Data Integrity + Session Resume v25 ===== */
+state.schemaVersion=26;
+state.sessionRecovery=Object.assign({lastSavedAt:0,lastView:"dashboard"},state.sessionRecovery||{});
+
+function compactStateForStorage(){
+ const copy={...state};
+ copy.aiHistory=(copy.aiHistory||[]).slice(-30);
+ copy.messages=(copy.messages||[]).slice(-30);
+ copy.proficiencyHistory=(copy.proficiencyHistory||[]).slice(-60);
+ if(copy.adaptiveLoop){
+  copy.adaptiveLoop={...copy.adaptiveLoop,
+   meetingReports:(copy.adaptiveLoop.meetingReports||[]).slice(0,12),
+   lastSimResult:copy.adaptiveLoop.lastSimResult||null
+  };
+ }
+ return copy;
+}
+function persistStateSafe(){
+ state.sessionRecovery.lastSavedAt=Date.now();
+ try{
+  localStorage.setItem("investorCoachState",JSON.stringify(compactStateForStorage()));
+  return true;
+ }catch(e){
+  console.error("State save failed",e);
+  try{
+   const emergency={...compactStateForStorage(),aiHistory:(state.aiHistory||[]).slice(-8),messages:(state.messages||[]).slice(-12),proficiencyHistory:(state.proficiencyHistory||[]).slice(-20)};
+   localStorage.setItem("investorCoachState",JSON.stringify(emergency));return true;
+  }catch(e2){console.error("Emergency state save failed",e2);return false}
+ }
+}
+const _saveV25=save;
+save=function(){return persistStateSafe()};
+
+function currentAppView(){
+ return document.querySelector(".view.active")?.id?.replace(/^view-/,"")||"dashboard";
+}
+function checkpointSession(){
+ state.sessionRecovery.lastView=currentAppView();
+ persistStateSafe();
+}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")checkpointSession()});
+window.addEventListener("pagehide",checkpointSession);
+
+function cancelLiveVoiceSafely(){
+ clearLiveRecordTimer?.();
+ try{
+  const rec=mediaState?.recorder;
+  if(rec&&["recording","paused"].includes(rec.state))rec.stop();
+ }catch(_){}
+ stopLiveTracks?.();
+ voiceRunning=false;
+}
+const _startInvestorScenarioV25=startInvestorScenario;
+startInvestorScenario=function(id){
+ cancelLiveVoiceSafely();
+ clearPreparedVoice?.();
+ _startInvestorScenarioV25(id);
+ if(state.adaptiveLoop)state.adaptiveLoop.lastSimResult=null;
+ save();
+};
+
+function sessionResumeHtml(){
+ const s=state.simSession;
+ if(!s?.active||s.complete||!state.messages?.length)return "";
+ const title=INVESTOR_SCENARIOS[state.simScenario]?.title||"Встреча";
+ return `<div class="session-resume"><strong>${safe(title)} · вопрос ${Math.min((s.turn||0)+1,s.maxTurns||6)}/${s.maxTurns||6}</strong><span>Сессия сохранена. Можно продолжить с текущего вопроса.</span></div>`;
+}
+const _renderInvestorV25=renderInvestor;
+renderInvestor=function(){
+ _renderInvestorV25();
+ const main=document.querySelector(".live-investor-main");
+ if(main&&!main.querySelector(".session-resume")){
+  const html=sessionResumeHtml();
+  if(html)main.insertAdjacentHTML("afterbegin",html);
+ }
+};
+
+function exportLearningData(){
+ const payload={exportedAt:new Date().toISOString(),schemaVersion:state.schemaVersion,
+  progress:{day:state.day,streak:state.streak,learned:state.learned,srs:state.srs,coachStats:state.coachStats,skillProfile:state.skillProfile,baseline:state.baseline,proficiencyHistory:state.proficiencyHistory},
+  investor:{scenario:state.simScenario,session:state.simSession,meetingReports:state.adaptiveLoop?.meetingReports||[],gaps:state.adaptiveLoop?.gaps||{}},
+  readiness:typeof professionalReadiness==="function"?professionalReadiness():null};
+ const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+ const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`investor-coach-progress-${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
+
+/* ===== Pilot Instrumentation v26 ===== */
+state.pilotMetrics=Object.assign({firstSeenAt:"",events:[],lastSessionAt:""},state.pilotMetrics||{});
+if(!state.pilotMetrics.firstSeenAt)state.pilotMetrics.firstSeenAt=new Date().toISOString();
+const PILOT_RUNTIME_SESSION=(crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+function pilotEvent(type,data={}){
+ const clean={};
+ Object.entries(data||{}).forEach(([k,v])=>{
+  if(v==null)return;
+  if(typeof v==="number"||typeof v==="boolean")clean[k]=v;
+  else if(typeof v==="string")clean[k]=v.slice(0,120);
+ });
+ const e={at:Date.now(),day:today(),session:PILOT_RUNTIME_SESSION,type:String(type).slice(0,60),data:clean};
+ state.pilotMetrics.events.push(e);
+ state.pilotMetrics.events=state.pilotMetrics.events.slice(-800);
+ state.pilotMetrics.lastSessionAt=new Date().toISOString();
+ persistStateSafe();
+ return e;
+}
+function pilotEvents(type){return (state.pilotMetrics.events||[]).filter(e=>!type||e.type===type)}
+function pilotActiveDays(){
+ return new Set((state.pilotMetrics.events||[]).map(e=>e.day).filter(Boolean)).size;
+}
+function pilotSessionMinutes(){
+ const events=state.pilotMetrics.events||[],starts=events.filter(e=>e.type==="app_session_started"),ends=events.filter(e=>e.type==="app_session_ended");
+ let ms=0;
+ for(const s of starts){
+  const e=ends.find(x=>x.data?.session===s.session&&x.at>=s.at);
+  if(e)ms+=Math.max(0,Math.min(e.at-s.at,8*60*60*1000));
+ }
+ return Math.round(ms/60000);
+}
+function pilotCoachAccuracy(){
+ const rows=pilotEvents("coach_answer"),n=rows.length;
+ return n?Math.round(100*rows.filter(e=>e.data?.correct).length/n):null;
+}
+function pilotMetricSummary(){
+ const events=state.pilotMetrics.events||[];
+ const count=t=>events.filter(e=>e.type===t).length;
+ const voice=events.filter(e=>e.type==="ai_evaluation"&&["sim","coach","speak","pitch"].includes(e.data?.mode)).length;
+ const simAnswers=events.filter(e=>e.type==="ai_evaluation"&&e.data?.mode==="sim").length;
+ const placement=state.baseline?.captured?state.baseline.readiness:(state.placement?.done?state.placement.score:null);
+ const current=typeof professionalReadiness==="function"?professionalReadiness():null;
+ return {
+  activeDays:pilotActiveDays(),
+  coachAnswers:count("coach_answer"),
+  voiceEvaluations:voice,
+  investorAnswers:simAnswers,
+  meetingsStarted:count("investor_session_started"),
+  examsStarted:count("exam_started"),
+  retentionChecks:count("retention_completed"),
+  baseline:placement,
+  current,
+  readinessDelta:placement==null||current==null?null:Math.round(current-placement),
+  retention:state.validation?.retentionScore??null,
+  coachAccuracy:pilotCoachAccuracy(),
+  sessionMinutes:pilotSessionMinutes()
+ };
+}
+function pilotSummaryHtml(){
+ if(!state.placement?.done)return "";
+ const s=pilotMetricSummary(),delta=s.readinessDelta;
+ return `<div class="card pilot-metrics-card"><div class="row between"><div><span class="tag">РЕЗУЛЬТАТ ОБУЧЕНИЯ</span><h3>${s.current??0}% · Professional Readiness</h3><p class="muted">Локальная статистика реальной практики на этом устройстве.</p></div><button class="btn secondary" onclick="exportPilotMetrics()">Скачать отчёт</button></div>
+ <div class="pilot-metrics-grid">
+  <div><strong>${s.activeDays}</strong><span>активных дней</span></div>
+  <div><strong>${s.coachAnswers}</strong><span>ответов Coach</span></div>
+  <div><strong>${s.investorAnswers}</strong><span>ответов инвестору</span></div>
+  <div><strong>${s.voiceEvaluations}</strong><span>AI-разборов речи</span></div>
+ </div>
+ <div class="pilot-metrics-foot"><span>Старт: <strong>${s.baseline??"—"}%</strong></span><span>Сейчас: <strong>${s.current??"—"}%</strong></span><span>Изменение: <strong>${delta==null?"—":`${delta>0?"+":""}${delta} п.п.`}</strong></span><span>Удержание: <strong>${s.retention==null?"—":s.retention+"%"}</strong></span><span>Coach accuracy: <strong>${s.coachAccuracy==null?"—":s.coachAccuracy+"%"}</strong></span><span>Время: <strong>${s.sessionMinutes} мин</strong></span></div>
+ <p class="small muted">В отчёт не попадают тексты ваших ответов и аудиозаписи — только учебные события и баллы.</p></div>`;
+}
+function exportPilotMetrics(){
+ const summary=pilotMetricSummary();
+ const report={
+  product:"Investor Coach",
+  schemaVersion:26,
+  exportedAt:new Date().toISOString(),
+  firstSeenAt:state.pilotMetrics.firstSeenAt,
+  summary,
+  baseline:state.baseline||null,
+  latestExam:state.exam?.complete?{score:examAverage(),grade:state.exam.grade||"",finishedAt:state.exam.finishedAt||null}:null,
+  retention:state.validation?.retentionScore==null?null:{score:state.validation.retentionScore,at:state.validation.retentionAt||null},
+  skillProfile:snapshotSkills(),
+  events:(state.pilotMetrics.events||[]).map(e=>({at:e.at,day:e.day,type:e.type,data:e.data}))
+ };
+ const blob=new Blob([JSON.stringify(report,null,2)],{type:"application/json"});
+ const a=document.createElement("a"),url=URL.createObjectURL(blob);
+ a.href=url;a.download=`investor-coach-pilot-${today()}.json`;a.click();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+const _coachRecordResultV26=coachRecordResult;
+coachRecordResult=function(task,ok){
+ const result=_coachRecordResultV26(task,ok);
+ const stat=task?.termId?coachStat(task.termId):null;
+ pilotEvent("coach_answer",{termId:task?.termId||"",taskType:task?.type||"",correct:!!ok,mastery:stat?.mastery??0});
+ return result;
+};
+
+const _finishPlacementV26=finishPlacement;
+finishPlacement=function(){
+ const wasDone=!!state.placement?.done;
+ const result=_finishPlacementV26();
+ if(!wasDone&&state.placement?.done)pilotEvent("placement_completed",{score:state.placement.score??0,plan:state.placement.recommended||state.coachPlan||""});
+ return result;
+};
+
+const _finishRetentionCheckV26=finishRetentionCheck;
+finishRetentionCheck=function(){
+ const wasActive=!!state.retentionCheck?.active;
+ const result=_finishRetentionCheckV26();
+ if(wasActive&&!state.retentionCheck?.active)pilotEvent("retention_completed",{score:state.retentionCheck.score??0});
+ return result;
+};
+
+const _applyAiResultV26=applyAiResult;
+applyAiResult=function(res,mode,userText){
+ const score=_applyAiResultV26(res,mode,userText);
+ pilotEvent("ai_evaluation",{mode:String(mode||""),score,learningGap:res?.learning_gap||"none",nextDrill:res?.next_drill||""});
+ return score;
+};
+
+const _startInvestorScenarioV26=startInvestorScenario;
+startInvestorScenario=function(id){
+ const result=_startInvestorScenarioV26(id);
+ pilotEvent("investor_session_started",{scenario:id||state.simScenario||""});
+ return result;
+};
+
+const _startInvestorExamV26=startInvestorExam;
+startInvestorExam=function(){
+ const result=_startInvestorExamV26();
+ pilotEvent("exam_started",{maxTurns:state.exam?.maxTurns||10});
+ return result;
+};
+
+const _renderDashboardV26=renderDashboard;
+renderDashboard=function(){
+ _renderDashboardV26();
+ if(state.placement?.active||state.retentionCheck?.active)return;
+ const root=$("#view-dashboard");
+ if(root&&!root.querySelector(".pilot-metrics-card"))root.insertAdjacentHTML("beforeend",pilotSummaryHtml());
+};
+
+pilotEvent("app_session_started",{version:"26.0.0"});
+let pilotSessionClosed=false;
+function closePilotSession(){
+ if(pilotSessionClosed)return;
+ pilotSessionClosed=true;
+ pilotEvent("app_session_ended",{session:PILOT_RUNTIME_SESSION,durationMinutes:Math.round((Date.now()-Number((pilotEvents("app_session_started").find(e=>e.session===PILOT_RUNTIME_SESSION)?.at||Date.now())))/60000)});
+}
+window.addEventListener("pagehide",closePilotSession,{once:true});
+try{renderDashboard()}catch{}
